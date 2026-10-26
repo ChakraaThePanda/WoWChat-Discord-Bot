@@ -108,7 +108,7 @@ public final class GuildRosterPublisher {
                 (wowchat.game.GamePacketHandler) gameOptForKick.get();
             scala.collection.Seq<String> bannedClasses = Global$.MODULE$.config().guildEnforcement().bannedClasses();
             for (GuildMember member : allMembers) {
-                if (SlashCommandHandler.isBanned(member.name())) {
+                if (BanManager.isBanned(member.name())) {
                     System.out.println("[BanList] Kicking banned player: " + member.name());
                     kickHandler.sendGuildKick(member.name());
                 } else if (!bannedClasses.isEmpty()) {

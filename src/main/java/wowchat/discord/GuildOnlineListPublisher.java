@@ -312,7 +312,7 @@ public final class GuildOnlineListPublisher {
     // so tick() can sort them alphabetically and join with newlines.
     // -------------------------------------------------------------------------
 
-    private static List<String> getOnlineNames() {
+    static List<String> getOnlineNames() {
         try {
             Option<GameCommandHandler> gameOpt = Global$.MODULE$.game();
             if (gameOpt == null || gameOpt.isEmpty()) return Collections.emptyList();

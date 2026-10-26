@@ -444,7 +444,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
           messages.foreach(message => {
             // Check ignore and ban lists before sending queued messages
             if (!wowchat.discord.IgnoreManager.isIgnored(nameQueryMessage.name) &&
-                !wowchat.discord.SlashCommandHandler.isBanned(nameQueryMessage.name)) {
+                !wowchat.discord.BanManager.isBanned(nameQueryMessage.name)) {
               Global.discord.sendMessageFromWow(Some(nameQueryMessage.name), message.message, message.tp, message.channel)
             }
           })
@@ -749,7 +749,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       })(name => {
         // Check if player is ignored or banned before relaying to Discord
         if (!wowchat.discord.IgnoreManager.isIgnored(name.name) &&
-            !wowchat.discord.SlashCommandHandler.isBanned(name.name)) {
+            !wowchat.discord.BanManager.isBanned(name.name)) {
           Global.discord.sendMessageFromWow(Some(name.name), chatMessage.message, chatMessage.tp, chatMessage.channel)
         }
       })
@@ -839,17 +839,13 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   private def handle_SMSG_WHO(msg: Packet): Unit = {
     val displayResults = parseWhoResponse(msg)
     val req = CommandHandler.whoRequest
-
-    // Helper: send via interaction hook (ephemeral) if available, else normal channel message
-    def sendWhoMsg(msg: String): Unit = req.hook match {
-      case Some(hook) =>
-        val button = net.dv8tion.jda.api.interactions.components.buttons.Button.primary("post_who", "Post to Channel")
-        hook.sendMessage(msg)
-          .addActionRow(button)
-          .setEphemeral(true)
-          .queue()
-      case None => Discord.sendMessage(req.messageChannel, msg)
+    if (req == null) {
+      return
     }
+
+    // Results are collected and delivered once: to the menu that asked (reply) or to the channel
+    val results = mutable.ArrayBuffer.empty[String]
+    def sendWhoMsg(msg: String): Unit = results += msg
 
     // Get Discord guild for ownership lookup
     val discordGuild = Option(wowchat.discord.GuildOnlineListPublisher.getJda()).flatMap { jda =>
@@ -895,6 +891,11 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       }
     } else {
       handledResponses.foreach(sendWhoMsg)
+    }
+
+    req.reply match {
+      case Some(reply) => reply.accept(results.mkString("\n"))
+      case None => results.foreach(Discord.sendMessage(req.messageChannel, _))
     }
   }
 

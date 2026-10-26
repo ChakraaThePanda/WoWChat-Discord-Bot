@@ -64,7 +64,7 @@ public final class AutoGuildInviteHandler {
     }
 
     private static boolean shouldBlock(String name, byte charClass, String race, GamePacketHandler handler) {
-        if (wowchat.discord.SlashCommandHandler.isBanned(name)) {
+        if (wowchat.discord.BanManager.isBanned(name)) {
             System.out.println("[AutoGuildInvite] Ignoring invite request from " + name + ": player is banned.");
             return true;
         }

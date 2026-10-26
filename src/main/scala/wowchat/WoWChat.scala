@@ -9,11 +9,18 @@ import wowchat.realm.{RealmConnectionCallback, RealmConnector}
 import com.typesafe.scalalogging.StrictLogging
 import io.netty.channel.nio.NioEventLoopGroup
 
-import scala.io.Source
-
 object WoWChat extends StrictLogging {
 
   private val RELEASE = "v1.4.0"
+
+  // Tells the watchdog not to restart: the same mistake would just happen again
+  val SETUP_ERROR_EXIT_CODE = 2
+
+  def stopForSetupError(message: String): Nothing = {
+    logger.error(message)
+    logger.error("Fix wowchat.conf, then start the bot again.")
+    sys.exit(SETUP_ERROR_EXIT_CODE)
+  }
 
   def main(args: Array[String]): Unit = {
     logger.info(s"Running WoWChat - $RELEASE")
@@ -23,12 +30,10 @@ object WoWChat extends StrictLogging {
       logger.info("No configuration file supplied. Trying with default wowchat.conf.")
       "wowchat.conf"
     }
-    Global.config = WowChatConfig(confFile)
-
-    try {
-      checkForNewVersion
+    Global.config = try {
+      WowChatConfig(confFile)
     } catch {
-      case e: Exception => logger.error("Failed to check for a new version!", e)
+      case e: Exception => stopForSetupError(s"Could not read $confFile: ${e.getMessage}")
     }
 
     val gameConnectionController: CommonConnectionCallback = new CommonConnectionCallback {
@@ -73,7 +78,7 @@ object WoWChat extends StrictLogging {
     }
 
     logger.info("Connecting to Discord...")
-    Global.discord = new Discord(new CommonConnectionCallback {
+    Global.discord = try new Discord(new CommonConnectionCallback {
       override def connected: Unit = {
         // Initialize Discord ID extractor with config
         try {
@@ -91,29 +96,14 @@ object WoWChat extends StrictLogging {
         wowchat.discord.DiscordDMHandler.init()
         wowchat.discord.AutoGuildInviteHandler.init()
         wowchat.discord.IgnoreManager.init()
-        wowchat.discord.SlashCommandHandler.initBanList()
+        wowchat.discord.BanManager.init()
         gameConnectionController.connect
       }
 
       override def error: Unit = sys.exit(1)
-    })
-  }
-
-  private def checkForNewVersion = {
-    // This is JSON, but I really just didn't want to import a full blown JSON library for one string.
-    val data = Source.fromURL("https://api.github.com/repos/fjaros/wowchat/releases/latest").mkString
-    val regex = "\"tag_name\":\"(.+?)\",".r
-    val repoTagName = regex
-      .findFirstMatchIn(data)
-      .map(_.group(1))
-      .getOrElse("NOT FOUND")
-
-    if (repoTagName != RELEASE) {
-      logger.error( "~~~ !!!                YOUR WoWChat VERSION IS OUT OF DATE                !!! ~~~")
-      logger.error(s"~~~ !!!                     Current Version:  $RELEASE                      !!! ~~~")
-      logger.error(s"~~~ !!!                     Repo    Version:  $repoTagName                      !!! ~~~")
-      logger.error( "~~~ !!! RUN git pull OR GO TO https://github.com/fjaros/wowchat TO UPDATE !!! ~~~")
-      logger.error( "~~~ !!!                YOUR WoWChat VERSION IS OUT OF DATE                !!! ~~~")
+    }) catch {
+      case _: net.dv8tion.jda.api.exceptions.InvalidTokenException =>
+        stopForSetupError("The Discord bot token in wowchat.conf is invalid. Copy it again from the Discord Developer Portal (your app -> Bot -> Reset Token).")
     }
   }
 }

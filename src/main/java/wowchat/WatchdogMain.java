@@ -26,7 +26,7 @@ import java.util.List;
  * The watchdog only intervenes when the bot is truly stuck or silently broken.
  *
  * Built automatically by mvn package alongside wowchat.jar.
- * Run: java -jar watchdog.jar wowchat.jar wowchat.conf
+ * Run (from the bot folder): java -jar lib/watchdog.jar lib/wowchat.jar wowchat.conf
  */
 public final class WatchdogMain {
 
@@ -38,6 +38,7 @@ public final class WatchdogMain {
     private static final int    DISCORD_STALE_SECONDS   = 600;  // 10 min
     private static final int    RESTART_DELAY_SECONDS   = 15;
     private static final int    CHECK_INTERVAL_MS       = 10000;
+    private static final int    SETUP_ERROR_EXIT_CODE   = 2;    // WoWChat.SETUP_ERROR_EXIT_CODE
 
     private static final SimpleDateFormat timestampFormat = new SimpleDateFormat("HH:mm:ss.SSS");
 
@@ -115,6 +116,11 @@ public final class WatchdogMain {
                 Thread.sleep(CHECK_INTERVAL_MS);
             }
 
+            if (restartReason.equals("Bot process exited with code " + SETUP_ERROR_EXIT_CODE)) {
+                System.out.println("[Watchdog] Not restarting: the bot stopped because of a setup problem (see above).");
+                System.exit(SETUP_ERROR_EXIT_CODE);
+            }
+
             if (shouldRestart) {
                 System.out.println("[Watchdog] Restarting. Reason: " + restartReason);
                 process.destroy();
@@ -147,11 +153,18 @@ public final class WatchdogMain {
     }
 
     private static Process startProcess(String jarFile, String[] args) throws Exception {
+        // Same Java as the watchdog, so a freshly installed Java works before it's on PATH
+        File javaExe = new File(System.getProperty("java.home"), "bin" + File.separator + "java");
+        // logback.xml ships next to wowchat.jar
+        File jarDir = new File(jarFile).getAbsoluteFile().getParentFile();
+
         List<String> cmd = new ArrayList<>();
-        cmd.add("java");
+        cmd.add(javaExe.getPath());
         cmd.add("-XX:+HeapDumpOnOutOfMemoryError");
         cmd.add("-Dfile.encoding=UTF-8");
-        cmd.add("-Dlogback.configurationFile=logback.xml");
+        cmd.add("-Dstdout.encoding=UTF-8");
+        cmd.add("-Dstderr.encoding=UTF-8");
+        cmd.add("-Dlogback.configurationFile=" + new File(jarDir, "logback.xml").getPath());
         cmd.add("-jar");
         cmd.add(jarFile);
         for (String a : args) cmd.add(a);

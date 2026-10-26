@@ -221,12 +221,16 @@ public final class ProfessionManager {
         if (guild == null || discordId == null) return false;
         if (commandRoleIds.isEmpty()) return false;
         try {
-            Member member = guild.retrieveMemberById(discordId).complete();
-            if (member == null) return false;
-            return member.getRoles().stream().anyMatch(r -> commandRoleIds.contains(r.getId()));
+            // Members are cached (MemberCachePolicy.ALL), so no blocking request from the event thread
+            return hasCommandRole(guild.getMemberById(discordId));
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    public static boolean hasCommandRole(Member member) {
+        if (member == null) return false;
+        return member.getRoles().stream().anyMatch(r -> commandRoleIds.contains(r.getId()));
     }
 
     private static boolean isInGuild(String charName) {

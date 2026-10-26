@@ -1,6 +1,6 @@
 package wowchat.discord
 
-import wowchat.commands.{CommandHandler, WhoRequest}
+import wowchat.commands.CommandHandler
 import wowchat.common._
 import com.typesafe.scalalogging.StrictLogging
 import com.vdurmont.emoji.EmojiParser
@@ -11,7 +11,9 @@ import net.dv8tion.jda.api.entities.Activity.ActivityType
 import net.dv8tion.jda.api.entities.channel.ChannelType
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel
 import net.dv8tion.jda.api.events.StatusChangeEvent
-import net.dv8tion.jda.api.events.interaction.command.{CommandAutoCompleteInteractionEvent, SlashCommandInteractionEvent}
+import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent
+import net.dv8tion.jda.api.events.interaction.component.{ButtonInteractionEvent, StringSelectInteractionEvent}
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.events.session.ShutdownEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
@@ -381,12 +383,12 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
             discordConnectionCallback.connected
             firstConnect = false
             // Register slash commands on first connect only
-            wowchat.discord.SlashCommandHandler.registerCommands(jda)
+            MenuHandler.registerCommands(jda)
           } else {
             discordConnectionCallback.reconnected
           }
         } else {
-          logger.error("No discord channels configured!")
+          wowchat.WoWChat.stopForSetupError("None of the chat channels in wowchat.conf were found in your Discord server. Check the channel IDs, and that the bot can see those channels.")
         }
       case Status.DISCONNECTED =>
         discordConnectionCallback.disconnected
@@ -397,178 +399,28 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
   override def onShutdown(event: ShutdownEvent): Unit = {
     event.getCloseCode match {
       case CloseCode.DISALLOWED_INTENTS =>
-        logger.error("Per new Discord rules, you must check the PRESENCE INTENT, SERVER MEMBERS INTENT, and MESSAGE CONTENT INTENT boxes under \"Privileged Gateway Intents\" for this bot in the developer portal. You can find more info at https://discord.com/developers/docs/topics/gateway#privileged-intents")
+        wowchat.WoWChat.stopForSetupError("Turn on PRESENCE INTENT, SERVER MEMBERS INTENT and MESSAGE CONTENT INTENT for this bot in the Discord Developer Portal (your app -> Bot -> Privileged Gateway Intents).")
+      case CloseCode.AUTHENTICATION_FAILED =>
+        wowchat.WoWChat.stopForSetupError("The Discord bot token in wowchat.conf is invalid. Copy it again from the Discord Developer Portal (your app -> Bot -> Reset Token).")
       case _ =>
     }
   }
 
+  // /menu, /help and everything inside the menu (buttons, select menus, forms) live in MenuHandler
   override def onSlashCommandInteraction(event: SlashCommandInteractionEvent): Unit = {
-    val notOnline = "Bot is not online."
-    event.getName match {
-      case "who" =>
-        val player = event.getOption("player").getAsString
-        event.deferReply().setEphemeral(true).queue()
-        Global.game.fold({
-          event.getHook.sendMessage(notOnline).setEphemeral(true).queue()
-        })(game => {
-          CommandHandler.whoRequest = WhoRequest(
-            event.getChannel.asInstanceOf[net.dv8tion.jda.api.entities.channel.middleman.MessageChannel],
-            player,
-            Some(event.getHook)
-          )
-          game.handleWho(Some(player))
-        })
-
-      case "online" =>
-        event.deferReply().setEphemeral(true).queue()
-        Global.game.fold({
-          event.getHook.sendMessage(notOnline).queue()
-        })(game => {
-          val result = game.handleWho(None)
-          event.getHook.sendMessage(result.getOrElse("No guild members online.")).queue()
-        })
-
-      case "gmotd" =>
-        event.deferReply().setEphemeral(true).queue()
-        Global.game.fold({
-          event.getHook.sendMessage(notOnline).queue()
-        })(game => {
-          val result = game.handleGmotd()
-          event.getHook.sendMessage(result.getOrElse("No guild message of the day.")).queue()
-        })
-      
-      case "ignore" | "unignore" =>
-        event.deferReply().setEphemeral(true).queue()
-        val guild = event.getGuild
-        val userId = event.getUser.getId
-        jda.retrieveApplicationInfo().queue(appInfo => {
-          val isOwner = userId == appInfo.getOwner.getId
-          val hasRole = guild != null && wowchat.discord.ProfessionManager.hasCommandRole(userId, guild)
-          if (!isOwner && !hasRole) {
-            event.getHook.sendMessage("❌ You don't have permission to use this command.").setEphemeral(true).queue()
-          } else {
-            val player = event.getOption("player").getAsString
-            event.getName match {
-              case "ignore" =>
-                if (wowchat.discord.IgnoreManager.ignore(player)) {
-                  event.getHook.sendMessage(s"✅ **$player** has been added to the ignore list.\nTheir messages will no longer be relayed to Discord.").setEphemeral(true).queue()
-                } else {
-                  event.getHook.sendMessage(s"ℹ️ **$player** is already on the ignore list.").setEphemeral(true).queue()
-                }
-              case "unignore" =>
-                if (wowchat.discord.IgnoreManager.unignore(player)) {
-                  event.getHook.sendMessage(s"✅ **$player** has been removed from the ignore list.\nTheir messages will now be relayed to Discord.").setEphemeral(true).queue()
-                } else {
-                  event.getHook.sendMessage(s"ℹ️ **$player** is not on the ignore list.").setEphemeral(true).queue()
-                }
-            }
-          }
-        }, _ => event.getHook.sendMessage("❌ Failed to verify permissions.").setEphemeral(true).queue())
-
-      case "ignored" =>
-        wowchat.discord.SlashCommandHandler.handleIgnoredCommand(event)
-
-      case "ban" | "unban" =>
-        event.deferReply().setEphemeral(true).queue()
-        val guild = event.getGuild
-        val userId = event.getUser.getId
-        jda.retrieveApplicationInfo().queue(appInfo => {
-          val isOwner = userId == appInfo.getOwner.getId
-          val hasRole = guild != null && wowchat.discord.ProfessionManager.hasCommandRole(userId, guild)
-          if (!isOwner && !hasRole) {
-            event.getHook.sendMessage("❌ You don't have permission to use this command.").setEphemeral(true).queue()
-          } else {
-            val player = event.getOption("player").getAsString
-            event.getName match {
-              case "ban" =>
-                if (wowchat.discord.SlashCommandHandler.ban(player)) {
-                  event.getHook.sendMessage(s"✅ **$player** has been added to the ban list.\nTheir messages will no longer be relayed to Discord, and they will be auto-kicked from the guild each cycle.").setEphemeral(true).queue()
-                } else {
-                  event.getHook.sendMessage(s"ℹ️ **$player** is already on the ban list.").setEphemeral(true).queue()
-                }
-              case "unban" =>
-                if (wowchat.discord.SlashCommandHandler.unban(player)) {
-                  event.getHook.sendMessage(s"✅ **$player** has been removed from the ban list.\nTheir messages will now be relayed to Discord, and they will no longer be auto-kicked.").setEphemeral(true).queue()
-                } else {
-                  event.getHook.sendMessage(s"ℹ️ **$player** is not on the ban list.").setEphemeral(true).queue()
-                }
-            }
-          }
-        }, _ => event.getHook.sendMessage("❌ Failed to verify permissions.").setEphemeral(true).queue())
-
-      case "banned" =>
-        wowchat.discord.SlashCommandHandler.handleBannedCommand(event)
-
-      case "promote" | "demote" =>
-        event.deferReply().setEphemeral(true).queue()
-        val guild = event.getGuild
-        val userId = event.getUser.getId
-        jda.retrieveApplicationInfo().queue(appInfo => {
-          val isOwner = userId == appInfo.getOwner.getId
-          val hasRole = guild != null && wowchat.discord.ProfessionManager.hasCommandRole(userId, guild)
-          if (!isOwner && !hasRole) {
-            event.getHook.sendMessage("❌ You don't have permission to use this command.").setEphemeral(true).queue()
-          } else {
-            val character = event.getOption("character").getAsString
-            Global.game.fold(event.getHook.sendMessage(notOnline).setEphemeral(true).queue())(g => {
-              val validationError: Option[String] = g match {
-                case handler: wowchat.game.GamePacketHandler =>
-                  val botName = Global.config.wow.character
-                  val roster = handler.getGuildRoster
-                  val gInfo = handler.getGuildInfo
-                  val targetOpt = roster.values.find(_.name.equalsIgnoreCase(character))
-                  val botOpt = roster.values.find(_.name.equalsIgnoreCase(botName))
-                  (targetOpt, event.getName) match {
-                    case (None, _) =>
-                      Some(s"❌ **$character** was not found in the guild roster.")
-                    case (Some(target), "promote") =>
-                      botOpt match {
-                        case Some(bot) if target.rankIndex - 1 == bot.rankIndex =>
-                          Some(s"❌ Cannot promote **$character** - promoting them would give them the same rank as the bot.")
-                        case Some(bot) if target.rankIndex <= bot.rankIndex =>
-                          Some(s"❌ Cannot promote **$character** - they already have an equal or higher rank than the bot.")
-                        case _ => None
-                      }
-                    case (Some(target), "demote") =>
-                      if (gInfo != null && target.rankIndex >= gInfo.ranks.keys.max)
-                        Some(s"❌ Cannot demote **$character** - they are already at the lowest guild rank.")
-                      else None
-                    case _ => None
-                  }
-                case _ => None
-              }
-              validationError match {
-                case Some(err) =>
-                  event.getHook.sendMessage(err).setEphemeral(true).queue()
-                case None =>
-                  event.getName match {
-                    case "promote" =>
-                      g.sendGuildPromote(character)
-                      event.getHook.sendMessage(s"✅ Promote sent for **$character**.").setEphemeral(true).queue()
-                    case "demote" =>
-                      g.sendGuildDemote(character)
-                      event.getHook.sendMessage(s"✅ Demote sent for **$character**.").setEphemeral(true).queue()
-                  }
-                  g match {
-                    case handler: wowchat.game.GamePacketHandler => handler.forceRosterRefresh()
-                    case _ =>
-                  }
-              }
-            })
-          }
-        }, _ => event.getHook.sendMessage("❌ Failed to verify permissions.").setEphemeral(true).queue())
-
-      case "profession" =>
-        wowchat.discord.SlashCommandHandler.handleProfCommand(event)
-    }
-  }
-  
-  override def onButtonInteraction(event: net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent): Unit = {
-    wowchat.discord.SlashCommandHandler.handleButtonInteraction(event)
+    MenuHandler.handleSlashCommand(event)
   }
 
-  override def onCommandAutoCompleteInteraction(event: CommandAutoCompleteInteractionEvent): Unit = {
-    wowchat.discord.SlashCommandHandler.handleAutoComplete(event)
+  override def onButtonInteraction(event: ButtonInteractionEvent): Unit = {
+    MenuHandler.handleButton(event)
+  }
+
+  override def onStringSelectInteraction(event: StringSelectInteractionEvent): Unit = {
+    MenuHandler.handleSelect(event)
+  }
+
+  override def onModalInteraction(event: ModalInteractionEvent): Unit = {
+    MenuHandler.handleModal(event)
   }
 
   override def onMessageReceived(event: MessageReceivedEvent): Unit = {

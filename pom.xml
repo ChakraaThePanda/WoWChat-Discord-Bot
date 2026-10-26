@@ -198,6 +198,11 @@
                             <target>
                                 <copy file="${project.build.directory}/${project.artifactId}-${project.version}-watchdog.jar"
                                       tofile="${project.build.directory}/watchdog.jar" overwrite="true"/>
+                                <!-- Ready to run: the bot folder uses these straight away -->
+                                <copy file="${project.build.directory}/watchdog.jar"
+                                      tofile="${project.basedir}/bot/lib/watchdog.jar" overwrite="true"/>
+                                <copy file="${project.build.directory}/wowchat.jar"
+                                      tofile="${project.basedir}/bot/lib/wowchat.jar" overwrite="true"/>
                             </target>
                         </configuration>
                     </execution>

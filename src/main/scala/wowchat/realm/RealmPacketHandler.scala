@@ -124,12 +124,27 @@ class RealmPacketHandler(realmConnectionCallback: RealmConnectionCallback)
     }
   }
 
+  // Retrying these won't help, and repeated wrong passwords can get the account or IP locked out
+  private def stopIfSetupError(result: Int): Unit = {
+    import RealmPackets.AuthResult._
+    result match {
+      case WOW_FAIL_INCORRECT_PASSWORD =>
+        wowchat.WoWChat.stopForSetupError("The WoW account or password in wowchat.conf is wrong.")
+      case WOW_FAIL_VERSION_INVALID | WOW_FAIL_VERSION_UPDATE =>
+        wowchat.WoWChat.stopForSetupError("The server doesn't accept the game version set in wowchat.conf (wow.version).")
+      case WOW_FAIL_BANNED | WOW_FAIL_SUSPENDED =>
+        wowchat.WoWChat.stopForSetupError("The bot's WoW account is banned or suspended on this server.")
+      case _ =>
+    }
+  }
+
   private def handle_CMD_AUTH_LOGON_CHALLENGE(msg: Packet): Unit = {
     val error = msg.byteBuf.readByte // ?
     val result = msg.byteBuf.readByte
     if (!RealmPackets.AuthResult.isSuccess(result)) {
       logger.error(RealmPackets.AuthResult.getMessage(result))
       ctx.get.close
+      stopIfSetupError(result)
       realmConnectionCallback.error
       return
     }
@@ -191,6 +206,7 @@ class RealmPacketHandler(realmConnectionCallback: RealmConnectionCallback)
       logger.error(RealmPackets.AuthResult.getMessage(result))
       expectedDisconnect = true
       ctx.get.close
+      stopIfSetupError(result)
       if (result == RealmPackets.AuthResult.WOW_FAIL_UNKNOWN_ACCOUNT) {
         // seems sometimes this error happens even on a legit connect. so just run regular reconnect loop
         realmConnectionCallback.disconnected

@@ -1,2 +1,5 @@
 /target
 .claude
+
+# Runtime data (ignore and ban lists, professions, rank history, log)
+bot/data/
