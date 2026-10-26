@@ -478,6 +478,10 @@ public final class GuildRosterPublisher {
             } catch (ConfigException ignored) {}
 
             Set<String> ignoreSet = new HashSet<>();
+            // The bot's own character is never listed
+            if (config.hasPath("wow.character")) {
+                ignoreSet.add(config.getString("wow.character").trim().toLowerCase(Locale.ROOT));
+            }
             try {
                 // Check both old and new paths for ignore list
                 String ignorePath = config.hasPath("guildOnlineList.ignore")
