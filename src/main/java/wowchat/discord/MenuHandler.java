@@ -23,7 +23,6 @@ import net.dv8tion.jda.api.interactions.modals.ModalMapping;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageEditData;
 import scala.Option;
-import wowchat.commands.CommandHandler$;
 import wowchat.commands.WhoRequest;
 import wowchat.common.Global$;
 import wowchat.game.GameCommandHandler;
@@ -57,7 +56,7 @@ public final class MenuHandler {
     private static final String GITHUB_URL = "https://github.com/ChakraaThePanda/WoWChat-Discord-Bot";
 
     private static final String NO_PERMISSION =
-        "❌ Admin Actions are only for the bot owner and the roles listed in `commandRoleIds` in wowchat.conf.";
+        "❌ Admin Actions are only for the bot owner, the server owner and the roles listed in `commandRoleIds` in wowchat.conf.";
     private static final String NOT_CONNECTED =
         "❌ The bot isn't connected to the WoW server right now. Try again in a minute.";
 
@@ -321,14 +320,13 @@ public final class MenuHandler {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(embed("Look Up Player", result), resultRows))).queue();
         };
-        CommandHandler$.MODULE$.whoRequest_$eq(new WhoRequest(name, reply));
         scheduler.schedule(() -> {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(
                 embed("Look Up Player", "❌ The WoW server didn't answer about **" + name + "**. Try again."), resultRows))).queue();
         }, WHO_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        game.sendWho(name);
+        game.sendWho(new WhoRequest(name, reply));
     }
 
     private static Screen listsScreen() {
@@ -753,6 +751,11 @@ public final class MenuHandler {
     // -------------------------------------------------------------------------
 
     // Bot owner, server owner, or a member with one of discord.commandRoleIds
+    /** The Discord account that owns the bot application. */
+    static boolean isBotOwner(String userId) {
+        return userId != null && userId.equals(ownerId);
+    }
+
     private static boolean isAdmin(IReplyCallback event) {
         String userId = event.getUser().getId();
         if (userId.equals(ownerId)) return true;

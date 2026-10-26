@@ -12,12 +12,8 @@
  *   4. Only touches roles defined in guildRoleSync config (other roles untouched)
  *   5. Handles multi-rank users (e.g., one char Trusted, one char Member → gets both roles)
  *
- * CONFIG (wowchat.conf):
- *   guildRoleSync = [
- *     { guildRank = "Trusted",        discordRoleId = "1475141936498086048" },
- *     { guildRank = "Discord Linked", discordRoleId = "1496228872033796287" },
- *     { guildRank = "Member",         discordRoleId = "1475142433988804628" }
- *   ]
+ * CONFIG (wowchat.conf): guildDiscordLinking.roleSync, a list of
+ *   { guildRank = "Member", discordRoleId = 000000000000000000 }
  *
  *   Guild members should put their Discord user ID (numeric) in their officer note in-game.
  *   To get your Discord user ID: Enable Developer Mode in Discord settings, then right-click
@@ -79,7 +75,7 @@ public final class GuildRoleSync {
         }
 
         started = true;
-        long periodSec = Math.max(1, GuildOnlineListPublisher.getUpdateMinutes()) * 60L;
+        long periodSec = ConfigHelper.getFeaturesUpdateMinutes() * 60L;
         System.out.println("[GuildRoleSync] Initializing with " + rankToRoleId.size() + " rank mapping(s), interval: " + (periodSec / 60) + " min.");
 
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -274,8 +270,7 @@ public final class GuildRoleSync {
     // -------------------------------------------------------------------------
     private static void loadConfig() {
         try {
-            Config config = ConfigFactory.load(ConfigFactory.parseFile(
-                new java.io.File(System.getProperty("config.file", "wowchat.conf"))));
+            Config config = ConfigHelper.getConfig();
 
             // Check if guild role sync is enabled using ConfigHelper
             if (!ConfigHelper.isRoleSyncEnabled()) {

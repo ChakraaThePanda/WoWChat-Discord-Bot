@@ -303,8 +303,12 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
       return
     }
 
-    Global.wowToDiscord.get((ChatEvents.CHAT_MSG_GUILD, None))
-      .foreach(_.foreach {
+    // Same channel as the other guild events: guild.achievement.channel, or else the Guild chat relay
+    val channels = Global.guildEventsToDiscord.get("achievement")
+      .map(_.map(channel => (channel, None: Option[wowchat.common.DiscordChannelConfig])))
+      .getOrElse(Global.wowToDiscord.getOrElse((ChatEvents.CHAT_MSG_GUILD, None), mutable.Set.empty)
+        .map { case (channel, config) => (channel, Some(config)) })
+    channels.foreach {
         case (discordChannel, channelConfig) =>
           val formatted = notificationConfig
             .format
@@ -312,12 +316,12 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
             .replace("%user", name)
             .replace("%achievement", messageResolver.resolveAchievementId(achievementId))
 
-          val filter = shouldFilter(channelConfig.filters, formatted)
+          val filter = shouldFilter(channelConfig.flatMap(_.filters), formatted)
           logger.info(s"${if (filter) "FILTERED " else ""}WoW->Discord(${discordChannel.getName}) $formatted")
           if (!filter) {
             Discord.sendMessage(discordChannel, formatted)
           }
-      })
+    }
   }
 
   override def onStatusChange(event: StatusChangeEvent): Unit = {
@@ -467,7 +471,13 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     val channel = event.getChannel
     val channelId = channel.getId
     val channelName = event.getChannel.getName.toLowerCase
-    val effectiveName = sanitizeName(event.getMember.getEffectiveName)
+    // Only channels relayed to WoW matter: with none set up (menu-only), nothing else is done
+    val relayConfigs = Global.discordToWow.get(channelName).fold(Global.discordToWow.get(channelId))(Some(_))
+    if (relayConfigs.isEmpty) {
+      return
+    }
+    // Webhook and system messages have no member
+    val effectiveName = sanitizeName(Option(event.getMember).map(_.getEffectiveName).getOrElse(event.getAuthor.getName))
     val message = (sanitizeMessage(event.getMessage.getContentDisplay) +: event.getMessage.getAttachments.asScala.map(_.getUrl))
       .filter(_.nonEmpty)
       .mkString(" ")
@@ -477,9 +487,7 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     }
 
     // send to all configured wow channels
-    Global.discordToWow
-      .get(channelName)
-      .fold(Global.discordToWow.get(channelId))(Some(_))
+    relayConfigs
       .foreach(_.foreach(channelConfig => {
         val finalMessages = if (channelConfig.showUsernameInWow) {
           Discord.splitUpMessageToWow(channelConfig.format, effectiveName, message)

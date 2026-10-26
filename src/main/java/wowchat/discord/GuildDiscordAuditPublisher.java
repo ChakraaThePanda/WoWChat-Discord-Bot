@@ -256,9 +256,7 @@ public final class GuildDiscordAuditPublisher {
                 
                 // Check if character has the target rank
                 if (member.rankIndex() == targetRankIndex) {
-                    Member discordMember = discordGuild.getMemberById(discordId);
-                    String displayName = discordMember != null ? discordMember.getEffectiveName() : discordId;
-                    flaggedChars.add(new CharWithOwner(member.name(), discordId, displayName));
+                    flaggedChars.add(new CharWithOwner(member.name(), discordId));
                 }
             }
             
@@ -280,12 +278,10 @@ public final class GuildDiscordAuditPublisher {
     private static class CharWithOwner {
         String charName;
         String discordId;
-        String displayName;
-        
-        CharWithOwner(String charName, String discordId, String displayName) {
+
+        CharWithOwner(String charName, String discordId) {
             this.charName = charName;
             this.discordId = discordId;
-            this.displayName = displayName;
         }
     }
     

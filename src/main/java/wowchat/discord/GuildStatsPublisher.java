@@ -150,7 +150,7 @@ public final class GuildStatsPublisher {
         levelCounts.put("51-60", 0);
         levelCounts.put("61-70", 0);
         levelCounts.put("71-79", 0);
-        levelCounts.put("80", 0);
+        levelCounts.put("80+", 0);
 
         for (GuildMember m : members) {
             // Faction
@@ -185,7 +185,7 @@ public final class GuildStatsPublisher {
             else if (level <= 60)             levelCounts.put("51-60", levelCounts.get("51-60") + 1);
             else if (level <= 70)             levelCounts.put("61-70", levelCounts.get("61-70") + 1);
             else if (level <= 79)             levelCounts.put("71-79", levelCounts.get("71-79") + 1);
-            else if (level == 80)             levelCounts.put("80",    levelCounts.get("80")    + 1);
+            else                              levelCounts.put("80+",   levelCounts.get("80+")   + 1);
         }
 
         Map<String, Integer> profCounts = getProfessionCounts();
@@ -349,7 +349,7 @@ public final class GuildStatsPublisher {
 
         List<String> levelOrder = Arrays.asList(
             "1-10", "11-20", "21-30", "31-40", "41-50",
-            "51-60", "61-70", "71-79", "80"
+            "51-60", "61-70", "71-79", "80+"
         );
 
         StringBuilder sb = new StringBuilder("```\n");

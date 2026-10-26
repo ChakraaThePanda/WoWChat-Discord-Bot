@@ -24,16 +24,13 @@ public final class DiscordIdExtractor {
     
     private DiscordIdExtractor() {} // Utility class - no instantiation
     
-    /**
-     * Initialize the extractor with configuration.
-     * Call this once during bot startup.
-     */
-    public static void initialize(Config config) {
+    /** Reads guildDiscordLinking.noteLocation. Called once at startup. */
+    public static void initialize() {
         // Use ConfigHelper for consistent config reading with backward compatibility
         noteLocation = ConfigHelper.getDiscordLinkingNoteLocation();
         
         if (!noteLocation.equals("officer") && !noteLocation.equals("public")) {
-            System.err.println("[DiscordIdExtractor] Invalid guildLinkingNoteLocation: " + noteLocation + ", defaulting to 'officer'");
+            System.err.println("[DiscordIdExtractor] Invalid guildDiscordLinking.noteLocation: " + noteLocation + ", defaulting to 'officer'");
             noteLocation = "officer";
         }
     }

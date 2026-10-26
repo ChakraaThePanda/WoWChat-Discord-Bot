@@ -16,7 +16,7 @@ import java.util.*;
  * ProfessionManager
  *
  * Stores up to 2 primary professions per character name.
- * Persists to professions.json in the bot working directory.
+ * Persists to data/professions.json.
  *
  * Permissions:
  *   - A Discord user can only modify characters linked to their own Discord ID
@@ -41,6 +41,11 @@ public final class ProfessionManager {
     
     // charName (lowercased) -> last update timestamp (for cleanup grace period)
     private static final Map<String, Long> lastUpdated = new LinkedHashMap<>();
+    // "Still in the guild" times are only written to disk every 10 minutes, not on every roster update
+    private static long lastSeenSave = 0;
+
+    // Methods that read or change data/lastUpdated are synchronized: the game, the roster panels
+    // and /menu call them from different threads.
 
     // Discord role IDs allowed to manage professions for any character.
     // Loaded from discord.commandRoleIds in wowchat.conf.
@@ -54,14 +59,10 @@ public final class ProfessionManager {
     private ProfessionManager() {}
 
     /**
-     * Called on every guild roster update. Removes entries for characters
-     * no longer in the guild, keeping professions.json clean over time.
-     */
-    /**
      * Returns a list of entries for characters that have the given profession.
      * Each entry is a String[2]: [charName, storedValue e.g. "Herbalism:289"]
      */
-    public static List<String[]> listByProfession(String profession) {
+    public static synchronized List<String[]> listByProfession(String profession) {
         List<String[]> results = new ArrayList<>();
         for (Map.Entry<String, List<String>> e : data.entrySet()) {
             for (String stored : e.getValue()) {
@@ -83,7 +84,7 @@ public final class ProfessionManager {
      * 
      * This grace period allows characters that leave and rejoin quickly to keep their professions.
      */
-    public static void cleanupStaleEntries(java.util.Set<String> currentMemberNamesLower) {
+    public static synchronized void cleanupStaleEntries(java.util.Set<String> currentMemberNamesLower) {
         long now = System.currentTimeMillis();
         boolean changed = false;
         
@@ -91,8 +92,11 @@ public final class ProfessionManager {
         for (String currentMember : currentMemberNamesLower) {
             if (data.containsKey(currentMember)) {
                 lastUpdated.put(currentMember, now);
-                changed = true; // Timestamp refresh requires save
             }
+        }
+        if (now - lastSeenSave > 10 * 60 * 1000) {
+            lastSeenSave = now;
+            changed = true;
         }
         
         // Remove entries for non-members not seen in the guild for longer than the keep time
@@ -121,8 +125,8 @@ public final class ProfessionManager {
     // Public API
     // -------------------------------------------------------------------------
 
-    public static List<String> getProfessions(String charName) {
-        return data.getOrDefault(charName.toLowerCase(), Collections.emptyList());
+    public static synchronized List<String> getProfessions(String charName) {
+        return new ArrayList<>(data.getOrDefault(charName.toLowerCase(), Collections.emptyList()));
     }
 
     /** Returns display string e.g. "Herbalism (289)" or "Herbalism" */
@@ -142,7 +146,7 @@ public final class ProfessionManager {
      * Sets a profession for a character.
      * Returns null on success, or an error message string on failure.
      */
-    public static String add(String charName, String profession, Integer skillLevel, String callerDiscordId, Guild guild) {
+    public static synchronized String add(String charName, String profession, Integer skillLevel, String callerDiscordId, Guild guild) {
         if (!VALID_PROFESSIONS.contains(profession)) {
             return "Invalid profession. Valid options: " + String.join(", ", VALID_PROFESSIONS);
         }
@@ -190,7 +194,7 @@ public final class ProfessionManager {
      * Removes a profession from a character.
      * Returns null on success, or an error message string on failure.
      */
-    public static String remove(String charName, String profession, String callerDiscordId, Guild guild) {
+    public static synchronized String remove(String charName, String profession, String callerDiscordId, Guild guild) {
         if (!canModify(callerDiscordId, charName, guild)) {
             return "You can only remove professions from your own linked characters.";
         }
@@ -254,7 +258,8 @@ public final class ProfessionManager {
     }
 
     private static boolean canModify(String callerDiscordId, String charName, Guild guild) {
-        // Server owner bypasses all checks
+        // The bot owner and the server owner can edit anyone's, like in /menu's admin checks
+        if (MenuHandler.isBotOwner(callerDiscordId)) return true;
         if (guild != null && guild.getOwnerId().equals(callerDiscordId)) {
             return true;
         }

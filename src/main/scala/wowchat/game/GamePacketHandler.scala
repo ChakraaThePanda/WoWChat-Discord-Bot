@@ -8,7 +8,7 @@ import wowchat.game.warden.{WardenHandler, WardenPackets}
 import com.typesafe.scalalogging.StrictLogging
 import io.netty.buffer.{ByteBuf, PooledByteBufAllocator}
 import io.netty.channel.{ChannelFuture, ChannelHandlerContext, ChannelInboundHandlerAdapter}
-import wowchat.commands.{CommandHandler, WhoResponse}
+import wowchat.commands.{CommandHandler, WhoRequest, WhoResponse}
 import wowchat.discord.Discord
 
 import scala.collection.mutable
@@ -62,8 +62,8 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // The other lines .server info sends, kept out of Discord
   private val ServerInfoLine = """(?i)uptime|\brev\.|revision|update time diff|connection peak|max online|world db|characters in world|players in world|bots in world|players online|online players|connected players|account security level|^\s*\|-|\bmean:|\bmedian:|percentiles""".r.unanchored
   // /who answers carry no id, so remember what each /who we sent was for, oldest first:
-  // (is it a server count, when it was sent)
-  private val pendingWho = mutable.Queue.empty[(Boolean, Long)]
+  // (the player lookup that asked, or None for a server count; when it was sent)
+  private val pendingWho = mutable.Queue.empty[(Option[WhoRequest], Long)]
 
   protected var ctx: Option[ChannelHandlerContext] = None
   protected val playerRoster = LRUMap.empty[Long, Player]
@@ -117,10 +117,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   private def runGuildRosterExecutor: Unit = {
-    // Always run scheduled roster polling for Who's Online and Bot Status
-    // guildDiscordLinking.enabled only controls Discord ID-dependent features (audit/stats/roles/inactivity)
-    // No more guild event polling = predictable 60 queries/hour regardless of guild size
-    
+    // Asks for the guild roster about once a minute. Guild events don't trigger extra requests.
     executorService.scheduleWithFixedDelay(() => {
       // Enforce updating guild roster only once per minute
       if (System.currentTimeMillis - lastRequestedGuildRoster >= 60000) {
@@ -211,10 +208,6 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     Packet(CMSG_MESSAGECHAT, out)
   }
 
-  def sendCommand(command: String): Unit = {
-    sendMessageToWow(ChatEvents.CHAT_MSG_GUILD, command, None)
-  }
-
   def sendWhisper(playerName: String, message: String): Unit = {
     sendMessageToWow(ChatEvents.CHAT_MSG_WHISPER, message, Some(playerName))
   }
@@ -289,16 +282,6 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
   }
 
-  def sendNotification(message: String): Unit = {
-    sendMessageToWow(ChatEvents.CHAT_MSG_GUILD, message, None)
-  }
-
-  def sendInspect(guid: Long): Unit = {
-    val out = PooledByteBufAllocator.DEFAULT.buffer(8, 8)
-    out.writeLongLE(guid)
-    ctx.get.writeAndFlush(Packet(CMSG_INSPECT, out))
-  }
-
   def sendNameQuery(guid: Long): Unit = {
     ctx.foreach(ctx => {
       val out = PooledByteBufAllocator.DEFAULT.buffer(8, 8)
@@ -307,9 +290,8 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     })
   }
 
-  override def sendWho(playerName: String): Unit = {
-    queueWho(isServerCount = false)
-    ctx.foreach(_.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(playerName))))
+  override def sendWho(request: WhoRequest): Unit = {
+    sendWhoPacket(Some(request), request.playerName)
   }
 
   // Asks the server how many players are online, at most once a minute: with .server info
@@ -332,8 +314,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
     // Until .server info has proven itself, /who gives a count in the meantime
     if (!serverInfoWorks.contains(true)) {
-      queueWho(isServerCount = true)
-      ctx.foreach(_.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(""))))
+      sendWhoPacket(None, "")
     }
   }
 
@@ -365,18 +346,23 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // For Java callers: -1 until the server has answered. The bot's own character doesn't count.
   def getServerOnlineCount: Int = serverOnlineCount.fold(-1)(n => math.max(0, n - 1))
 
-  private def queueWho(isServerCount: Boolean): Unit = pendingWho.synchronized {
-    pendingWho.enqueue((isServerCount, System.currentTimeMillis))
+  // Queued and sent together, so answers come back in the order they were queued
+  private def sendWhoPacket(request: Option[WhoRequest], name: String): Unit = pendingWho.synchronized {
+    ctx.foreach(ctx => {
+      pendingWho.enqueue((request, System.currentTimeMillis))
+      ctx.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(name)))
+    })
   }
 
-  // Whether the /who answer just received is a server count. Requests the server
-  // never answered (after 10 seconds) are dropped.
-  private def nextWhoIsServerCount(): Boolean = pendingWho.synchronized {
+  // What the /who answer just received is for: Some(None) for a server count, Some(lookup)
+  // for a player lookup, None if nothing was waiting. Requests the server never answered
+  // (after 10 seconds) are dropped.
+  private def nextWho(): Option[Option[WhoRequest]] = pendingWho.synchronized {
     val now = System.currentTimeMillis
     while (pendingWho.nonEmpty && now - pendingWho.head._2 > 10000) {
       pendingWho.dequeue()
     }
-    pendingWho.nonEmpty && pendingWho.dequeue()._1
+    if (pendingWho.isEmpty) None else Some(pendingWho.dequeue()._1)
   }
 
   def getGuildMotd: Option[String] = guildMotd.filter(_.trim.nonEmpty)
@@ -419,7 +405,6 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       case SMSG_LOGIN_VERIFY_WORLD => handle_SMSG_LOGIN_VERIFY_WORLD(msg)
       case SMSG_GUILD_QUERY => handle_SMSG_GUILD_QUERY(msg)
       case SMSG_GUILD_EVENT => handle_SMSG_GUILD_EVENT(msg)
-      case SMSG_INSPECT_TALENT => wowchat.discord.ProfessionCache.handleInspectTalent(msg)
       case SMSG_GUILD_ROSTER => handle_SMSG_GUILD_ROSTER(msg)
       case SMSG_MESSAGECHAT => handle_SMSG_MESSAGECHAT(msg)
       case SMSG_GUILD_INVITE => handle_SMSG_GUILD_INVITE(msg)
@@ -744,23 +729,24 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       Global.discord.sendGuildNotification(eventConfigKey, formatted)
     }
 
-    // Roster updates now handled by scheduled polling only
-    // This eliminates ~37 queries/hour from guild events in large guilds
   }
 
   private def handle_SMSG_GUILD_ROSTER(msg: Packet): Unit = {
-    guildRoster.clear
-    guildRoster ++= parseGuildRoster(msg)
+    // Replaced in place, without clearing first: other threads read the roster meanwhile
+    val fresh = parseGuildRoster(msg)
+    guildRoster --= guildRoster.keys.filterNot(fresh.contains).toList
+    guildRoster ++= fresh
     updateGuildiesOnline
     // Clean up professions.json entries for characters no longer in guild
     val memberNames = new java.util.HashSet[String]()
     guildRoster.values.foreach(m => memberNames.add(m.name.toLowerCase))
     wowchat.discord.ProfessionManager.cleanupStaleEntries(memberNames)
 
-    // Fire name queries for online members always, offline only if online list or audit is enabled
+    // Name lookups give each member's race. Only ask for members whose race isn't known yet:
+    // online ones always, offline ones when a guild panel shows them.
+    val panelsShowOffline = wowchat.discord.GuildOnlineListPublisher.isEnabled || wowchat.discord.GuildRosterPublisher.isEnabled
     guildRoster.foreach { case (guid, member) =>
-      if (member.isOnline) sendNameQuery(guid)
-      else if (wowchat.discord.GuildOnlineListPublisher.isEnabled || wowchat.discord.GuildRosterPublisher.isEnabled) {
+      if (wowchat.discord.GuildOnlineListPublisher.getRace(member.name).isEmpty && (member.isOnline || panelsShowOffline)) {
         sendNameQuery(guid)
       }
     }
@@ -924,19 +910,18 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // This is actually really hard to map back to a specific request
   // because the packet doesn't include a cookie/id/requested name if none found
   private def handle_SMSG_WHO(msg: Packet): Unit = {
-    if (nextWhoIsServerCount()) {
-      // .server info is more accurate when it works
-      if (!serverInfoWorks.contains(true)) {
-        serverOnlineCount = parseWhoTotal(msg)
-      }
-      return
+    val req = nextWho() match {
+      case Some(Some(lookup)) => lookup
+      case Some(None) =>
+        // .server info is more accurate when it works
+        if (!serverInfoWorks.contains(true)) {
+          serverOnlineCount = parseWhoTotal(msg)
+        }
+        return
+      case None => return
     }
 
     val displayResults = parseWhoResponse(msg)
-    val req = CommandHandler.whoRequest
-    if (req == null) {
-      return
-    }
 
     // Results are collected and delivered once, to the menu that asked
     val results = mutable.ArrayBuffer.empty[String]

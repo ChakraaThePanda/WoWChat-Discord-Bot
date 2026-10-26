@@ -31,6 +31,8 @@ object WoWChat extends StrictLogging {
       logger.info("No configuration file supplied. Trying with default wowchat.conf.")
       "wowchat.conf"
     }
+    // The Discord features read the config through this, so they use the same file
+    System.setProperty("wowchat.configFile", confFile)
     Global.config = try {
       WowChatConfig(confFile)
     } catch {
@@ -81,14 +83,7 @@ object WoWChat extends StrictLogging {
     logger.info("Connecting to Discord...")
     Global.discord = try new Discord(new CommonConnectionCallback {
       override def connected: Unit = {
-        // Initialize Discord ID extractor with config
-        try {
-          val configFile = System.getProperty("wowchat.configFile", "wowchat.conf")
-          val config = com.typesafe.config.ConfigFactory.parseFile(new java.io.File(configFile)).resolve()
-          wowchat.discord.DiscordIdExtractor.initialize(config)
-        } catch {
-          case e: Throwable => logger.error("Failed to initialize DiscordIdExtractor", e)
-        }
+        wowchat.discord.DiscordIdExtractor.initialize()
         
         wowchat.discord.GuildOnlineListPublisher.init()
         wowchat.discord.GuildStatusRotation.init()

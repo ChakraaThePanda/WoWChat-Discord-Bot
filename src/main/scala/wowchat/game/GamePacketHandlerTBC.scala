@@ -139,7 +139,7 @@ class GamePacketHandlerTBC(realmId: Int, realmName: String, sessionKey: Array[By
       val guid = msg.byteBuf.readLongLE
       val isOnline = msg.byteBuf.readBoolean
       val name = msg.readString
-      msg.byteBuf.skipBytes(4) // guild rank
+      val rankIndex = msg.byteBuf.readIntLE // guild rank index
       val level = msg.byteBuf.readByte
       val charClass = msg.byteBuf.readByte
       msg.byteBuf.skipBytes(1) // tbc unkn

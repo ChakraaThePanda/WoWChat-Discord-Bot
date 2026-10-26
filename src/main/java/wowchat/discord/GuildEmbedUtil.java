@@ -21,10 +21,12 @@ public final class GuildEmbedUtil {
 
     private GuildEmbedUtil() {} // Utility class - no instantiation
 
-    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss zzz");
+    // SimpleDateFormat isn't thread-safe, and several panels format dates at once
+    private static final ThreadLocal<SimpleDateFormat> DATE_FORMAT =
+        ThreadLocal.withInitial(() -> new SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss zzz"));
 
     public static String getFormattedDate() {
-        return DATE_FORMAT.format(new Date());
+        return DATE_FORMAT.get().format(new Date());
     }
     
     // Cache the last known identifier to avoid "Unknown Guild" after reconnects
@@ -147,50 +149,6 @@ public final class GuildEmbedUtil {
                     
                     // Check if title matches
                     if (title != null && title.equals(embed.getTitle())) {
-                        // Check if footer starts with our identifier
-                        MessageEmbed.Footer footer = embed.getFooter();
-                        if (footer != null && footer.getText() != null && footer.getText().startsWith(ourIdentifier)) {
-                            return msg.getId();
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            System.err.println("[GuildEmbedUtil] Error searching message history: " + t.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * Find an existing embed message by matching title pattern and footer identifier.
-     * 
-     * Similar to findEmbedByTitleAndFooter, but for paginated embeds where the title
-     * contains page numbers or other dynamic content. Checks if the embed title
-     * STARTS WITH the given titlePrefix.
-     * 
-     * Example: titlePrefix="Guild Roster" matches "Guild Roster (102) (1/2)"
-     * 
-     * @param channel The Discord channel to search
-     * @param titlePrefix The prefix the embed title should start with
-     * @return Message ID if found, null otherwise
-     */
-    public static String findEmbedByTitlePrefixAndFooter(TextChannel channel, String titlePrefix) {
-        try {
-            String ourIdentifier = getGuildRealmIdentifier();
-            List<Message> history = channel.getHistory().retrievePast(100).complete();
-            if (history == null) return null;
-            
-            for (Message msg : history) {
-                User author = msg.getAuthor();
-                if (author == null || !author.isBot()) continue;
-                
-                List<MessageEmbed> embeds = msg.getEmbeds();
-                if (embeds != null && !embeds.isEmpty()) {
-                    MessageEmbed embed = embeds.get(0);
-                    
-                    // Check if title starts with prefix
-                    String embedTitle = embed.getTitle();
-                    if (embedTitle != null && embedTitle.startsWith(titlePrefix)) {
                         // Check if footer starts with our identifier
                         MessageEmbed.Footer footer = embed.getFooter();
                         if (footer != null && footer.getText() != null && footer.getText().startsWith(ourIdentifier)) {

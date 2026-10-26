@@ -26,7 +26,7 @@ public class GuildStatusRotation {
     private static volatile int statusIndex = 0;
     private static volatile boolean started = false;
     
-    /** When true, GamePacketHandler.updateGuildiesOnline() is suppressed via bytecode patch. */
+    /** When true, GamePacketHandler.updateGuildiesOnline() leaves the bot's status alone. */
     public static volatile boolean rotationActive = false;
 
     private static ScheduledExecutorService scheduler;

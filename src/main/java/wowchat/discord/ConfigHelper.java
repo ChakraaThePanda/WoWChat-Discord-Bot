@@ -24,11 +24,21 @@ public final class ConfigHelper {
     /**
      * Get the loaded config with proper resolution
      */
+    // Parsed once, and again only when the file changes on disk
+    private static volatile Config cachedConfig;
+    private static volatile long cachedConfigStamp = -1;
+
     public static Config getConfig() {
         try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            return ConfigFactory.parseFile(new File(configFile))
+            File file = new File(System.getProperty("wowchat.configFile", "wowchat.conf"));
+            long stamp = file.lastModified();
+            Config config = cachedConfig;
+            if (config != null && stamp == cachedConfigStamp) return config;
+            config = ConfigFactory.parseFile(file)
                 .resolve(com.typesafe.config.ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            cachedConfig = config;
+            cachedConfigStamp = stamp;
+            return config;
         } catch (Throwable t) {
             System.err.println("[ConfigHelper] Error loading config: " + t.getMessage());
             return ConfigFactory.empty();
@@ -47,6 +57,17 @@ public final class ConfigHelper {
     /** A real Discord ID: digits, and not the config's 000000000000000000 "not set" placeholder. */
     public static boolean isId(String value) {
         return value != null && value.trim().matches("\\d+") && !value.trim().matches("0+");
+    }
+
+    /** discord.featuresUpdateMinutes: how often the guild panels, role sync and checks run. */
+    public static int getFeaturesUpdateMinutes() {
+        try {
+            Config config = getConfig();
+            if (config.hasPath("discord.featuresUpdateMinutes")) {
+                return Math.max(1, config.getInt("discord.featuresUpdateMinutes"));
+            }
+        } catch (Throwable ignored) {}
+        return 5;
     }
 
     // =========================================================================
@@ -351,10 +372,6 @@ public final class ConfigHelper {
         }
     }
 
-    public static boolean isRosterEnabled() {
-        return isGuildRosterEnabled();
-    }
-    
     /**
      * Check if unlinked characters should be shown in the roster panel.
      * Defaults to true if not specified.

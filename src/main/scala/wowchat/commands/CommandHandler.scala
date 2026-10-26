@@ -11,10 +11,7 @@ case class WhoResponse(playerName: String, guildName: String, lvl: Int, cls: Str
 
 object CommandHandler extends StrictLogging {
 
-  // gross. rewrite
-  var whoRequest: WhoRequest = _
-
-  // eww
+  // Turns a /who result, or the guild roster when the player is offline, into lines for the menu
   def handleWhoResponse(whoResponse: Option[WhoResponse],
                         guildInfo: GuildInfo,
                         guildRoster: mutable.Map[Long, GuildMember],

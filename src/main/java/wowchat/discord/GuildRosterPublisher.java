@@ -28,21 +28,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * GuildRosterPublisher
- *
- * Posts and continuously updates two Discord messages in the same channel:
- *
- *   Message 1 - Audit:
- *     Panel 1: WoW members without a linked Discord account
- *     Panel 2: Discord members (by role) without a linked WoW character
- *
- *   Message 2 - Guild Roster (embed):
- *     All guild members grouped by Discord user (via officer note).
- *     Unlinked characters listed in a separate section at the bottom.
- *
- * Config keys:
- *   guildRosterChannelId  - Discord channel ID
- *   guildAuditRoleIds    - list of Discord role IDs for Panel 2
+ * Guild Roster channel: posts and keeps updating the Audit, Statistics and Roster panels, and on
+ * each update also runs the ban list, class and race rules, profession cleanup and rank timers.
+ * Settings: guildDiscordLinking.guildRoster in wowchat.conf.
  */
 public final class GuildRosterPublisher {
 
@@ -69,10 +57,11 @@ public final class GuildRosterPublisher {
 
         loadConfig();
 
-        if (channelIds.isEmpty()) return;
-
-        System.out.println("[GuildRoster] Initializing. Channel IDs: " + channelIds
-            + ", update interval: " + updateMinutes + " min.");
+        // Always runs: the ban list, class and race rules and rank timers need no roster channel
+        if (!channelIds.isEmpty()) {
+            System.out.println("[GuildRoster] Initializing. Channel IDs: " + channelIds
+                + ", update interval: " + updateMinutes + " min.");
+        }
 
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             new GuildOnlineListPublisher.DaemonThreadFactory("wowchat-guild-audit"));
@@ -95,6 +84,13 @@ public final class GuildRosterPublisher {
             // Bot is disconnected from game server, skip this update
             return;
         }
+        // Also skip while (re)connecting, before the guild list has arrived: an empty list would
+        // restart every rank timer and post an empty roster
+        Option<wowchat.game.GameCommandHandler> gameNow = Global$.MODULE$.game();
+        if (gameNow == null || gameNow.isEmpty() || !(gameNow.get() instanceof GamePacketHandler)
+                || ((GamePacketHandler) gameNow.get()).guildRoster().isEmpty()) {
+            return;
+        }
 
         // Refresh shared cache once per tick (OPTIMIZATION)
         GuildDataCache.getInstance().refresh();
@@ -107,22 +103,38 @@ public final class GuildRosterPublisher {
             wowchat.game.GamePacketHandler kickHandler =
                 (wowchat.game.GamePacketHandler) gameOptForKick.get();
             scala.collection.Seq<String> bannedClasses = Global$.MODULE$.config().guildEnforcement().bannedClasses();
+            scala.collection.Seq<String> bannedRaces = Global$.MODULE$.config().guildEnforcement().bannedRaces();
             for (GuildMember member : allMembers) {
                 if (BanManager.isBanned(member.name())) {
                     System.out.println("[BanList] Kicking banned player: " + member.name());
                     kickHandler.sendGuildKick(member.name());
-                } else if (!bannedClasses.isEmpty()) {
-                    String memberClass = getClassName(member.charClass()).toLowerCase();
-                    if (bannedClasses.contains(memberClass)) {
-                        System.out.println("[ClassBan] Kicking " + member.name() + " (" + memberClass + "): class is blacklisted.");
-                        kickHandler.sendGuildKick(member.name());
-                    }
+                    continue;
+                }
+                String memberClass = getClassName(member.charClass()).toLowerCase();
+                if (bannedClasses.contains(memberClass)) {
+                    System.out.println("[ClassBan] Kicking " + member.name() + " (" + memberClass + "): class is blacklisted.");
+                    kickHandler.sendGuildKick(member.name());
+                    continue;
+                }
+                // Race comes from name lookups, so it's unknown for a while for some members
+                String memberRace = GuildOnlineListPublisher.getRace(member.name()).trim().toLowerCase();
+                // endsWith: Pandaren come as "Horde Pandaren" or "Alliance Pandaren"
+                boolean raceBanned = false;
+                scala.collection.Iterator<String> races = bannedRaces.iterator();
+                while (races.hasNext()) {
+                    String r = races.next();
+                    if (memberRace.equals(r) || memberRace.endsWith(" " + r)) raceBanned = true;
+                }
+                if (!memberRace.isEmpty() && raceBanned) {
+                    System.out.println("[RaceBan] Kicking " + member.name() + " (" + memberRace + "): race is blacklisted.");
+                    kickHandler.sendGuildKick(member.name());
                 }
             }
         }
         
-        // Clean up stale profession entries (1 hour grace period)
-        Collection<GuildMember> currentMembers = GuildDataCache.getInstance().getMembers(true);
+        // Clean up professions of characters who left. Every member counts here, even ignored
+        // ones: they're still in the guild.
+        Collection<GuildMember> currentMembers = GuildDataCache.getInstance().getMembers(false);
         Set<String> currentMemberNamesLower = new HashSet<>();
         for (GuildMember m : currentMembers) {
             currentMemberNamesLower.add(m.name().toLowerCase());
@@ -341,7 +353,7 @@ public final class GuildRosterPublisher {
                 // Show count and instructions only
                 blocks.add("**Unlinked Characters (" + unlinked.size() + ")**\n"
                     + "_Link your characters in-game to appear in this roster._\n"
-                    + "_You can check the how-to on the [Github](https://github.com/ChakraaThePanda/WoWChat-Discord-Bot)._\n");
+                    + "_Type `/help` in Discord to see how._\n");
             }
         }
 
@@ -383,20 +395,6 @@ public final class GuildRosterPublisher {
 
         // Post or edit each page
         int totalMembers = sortedChars.size() - (int) sortedChars.stream().filter(n -> ignoreLower.contains(n.toLowerCase(Locale.ROOT))).count();
-        int level80Count = 0;
-        if (finalRoster != null) {
-            for (String charName : sortedChars) {
-                if (ignoreLower.contains(charName.toLowerCase(Locale.ROOT))) continue;
-                scala.collection.Iterator<GuildMember> it = finalRoster.valuesIterator();
-                while (it.hasNext()) {
-                    GuildMember member = it.next();
-                    if (member.name().equalsIgnoreCase(charName)) {
-                        if ((member.level() & 0xFF) >= 80) level80Count++;
-                        break;
-                    }
-                }
-            }
-        }
         // Post pages in forward order (1, 2, 3...)
         // New pages appear at bottom, edits stay in place
         for (int i = 0; i < pages.size(); i++) {
@@ -481,17 +479,6 @@ public final class GuildRosterPublisher {
             Config config = ConfigFactory.parseFile(new File(configFile))
                 .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
 
-            // Check if guild roster is enabled using ConfigHelper
-            if (!ConfigHelper.isGuildRosterEnabled()) {
-                System.out.println("[GuildRoster] Feature disabled in config");
-                channelIds = Collections.emptyList();
-                updateMinutes = 5;
-                ignoreLower = Collections.emptySet();
-                return;
-            }
-
-            channelIds = ConfigHelper.getGuildRosterChannelIds();
-
             updateMinutes = 5;
             try {
                 if (config.hasPath("discord.featuresUpdateMinutes")) {
@@ -499,6 +486,14 @@ public final class GuildRosterPublisher {
                 }
                 if (updateMinutes < 1) updateMinutes = 1;
             } catch (ConfigException ignored) {}
+
+            if (!ConfigHelper.isGuildRosterEnabled()) {
+                channelIds = Collections.emptyList();
+                ignoreLower = Collections.emptySet();
+                return;
+            }
+
+            channelIds = ConfigHelper.getGuildRosterChannelIds();
 
             Set<String> ignoreSet = new HashSet<>();
             // The bot's own character is never listed
@@ -519,6 +514,8 @@ public final class GuildRosterPublisher {
                 }
             } catch (Throwable ignored) {}
             ignoreLower = ignoreSet.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(ignoreSet);
+            // Stats and the audit leave the same characters out
+            GuildDataCache.getInstance().setIgnoreList(ignoreLower);
 
         } catch (Throwable t) {
             System.err.println("[GuildRoster] Failed to load config: " + t.getMessage());

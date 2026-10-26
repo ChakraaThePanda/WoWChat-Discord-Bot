@@ -1,36 +1,7 @@
 /*
- * GuildOnlineListPublisher.java - hardened version.
- *
- * CHANGES FROM ORIGINAL GPT VERSION:
- *
- * 1. JDA extraction via reflection made robust:
- *    The original used raw reflection with no logging if it failed, so the feature
- *    would silently stop working. Now: reflection result is cached after first success,
- *    failures are logged clearly, and the scheduler keeps retrying rather than dying.
- *
- * 2. Scheduler is properly named and isolated:
- *    The original DaemonThreadFactory was fine but the scheduler could swallow
- *    exceptions silently. Now we log any unexpected error in tick() clearly.
- *
- * 3. Config loading is more defensive:
- *    channelId parsing is cleaner with a single try/catch pattern.
- *
- * 4. Message marker changed to a single recognizable invisible char sequence.
- *    Functionally identical to original but easier to reason about.
- *
- * 5. Each entry now shows full info matching the ?online command format:
- *    "Symastic (40 Warrior in Stranglethorn Vale)"
- *    Uses the same Classes().valueOf() and GameResources$.AREA() lookups
- *    that GamePacketHandler uses for ?online.
- *
- * 6. Health file writer: writes lastRequestedGuildRoster() timestamp every 30s.
- *    The Watchdog reads this file to detect dead WoW connections without
- *    relying on log lines (which stop flowing during guild silence).
- *
- * NOTE ON THE REFLECTION HACK:
- *    The JDA field in Discord.java is private with no public accessor. Since we're
- *    working with a decompiled JAR and can't modify Discord.java directly, reflection
- *    is the correct workaround here. We cache the result so reflection only runs once.
+ * Who's Online: posts and keeps updating the list of guild members online (guildOnlineList in
+ * wowchat.conf), split over several posts when it's long. Also writes the health files the
+ * watchdog checks, and holds the race cache filled from name lookups.
  */
 package wowchat.discord;
 
@@ -74,7 +45,7 @@ public final class GuildOnlineListPublisher {
         }
     }
 
-    static String getRace(String name) {
+    public static String getRace(String name) {
         if (name == null || name.isEmpty()) return "";
         String race = raceCache.get(name.toLowerCase(Locale.ROOT));
         return race != null ? race + " " : "";
@@ -332,7 +303,7 @@ public final class GuildOnlineListPublisher {
     }
 
     // -------------------------------------------------------------------------
-    // Get list of online guild member entries, formatted to match ?online output:
+    // Get list of online guild member entries:
     //   "Symastic (40 Warrior in Stranglethorn Vale)"
     //
     // Delegates directly to GamePacketHandler.buildGuildiesOnline() which already
@@ -340,7 +311,7 @@ public final class GuildOnlineListPublisher {
     // Scala collection iterators as the rest of the bot. No reimplementation needed.
     //
     // buildGuildiesOnline() returns one of:
-    //   "Currently no Guild Members online."   - when empty (no newline)
+    //   "Currently no guildies online."   - when empty (no newline)
     //   "Currently 2 guildies online:\n        - when populated
     //    Name1 (40 Warrior in Zone), Name2 (...)"
     //
@@ -359,7 +330,7 @@ public final class GuildOnlineListPublisher {
             String raw = ((GamePacketHandler) handler).buildGuildiesOnline();
             if (raw == null || raw.isEmpty()) return Collections.emptyList();
 
-            // No newline means "Currently no Guild Members online." - nothing to show
+            // No newline means "Currently no guildies online." - nothing to show
             if (!raw.contains("\n")) return Collections.emptyList();
 
             // Strip the "Currently N guildies online:\n" header, split on ", "
@@ -421,10 +392,8 @@ public final class GuildOnlineListPublisher {
     // -------------------------------------------------------------------------
     // JDA extraction via reflection - cached after first success
     //
-    // WHY REFLECTION: Discord.java has a private `jda` field and no public
-    // accessor. Since this is a decompiled JAR we cannot modify Discord.java
-    // directly. Reflection is the correct workaround. We cache the result so
-    // this overhead only happens once per process lifetime.
+    // WHY REFLECTION: Discord.scala keeps its JDA in a private field. We cache the
+    // result so this overhead only happens once per process lifetime.
     // -------------------------------------------------------------------------
 
     public static JDA getJda() {
@@ -574,10 +543,6 @@ public final class GuildOnlineListPublisher {
         public DaemonThreadFactory(String prefix) {
             this.prefix = (prefix != null && !prefix.trim().isEmpty())
                 ? prefix.trim() : "wowchat";
-        }
-
-        public DaemonThreadFactory() {
-            this("wowchat");
         }
 
         @Override

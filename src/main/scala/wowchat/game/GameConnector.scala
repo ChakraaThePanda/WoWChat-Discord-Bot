@@ -22,9 +22,8 @@ class GameConnector(host: String,
                     gameEventCallback: CommonConnectionCallback)
   extends GamePackets with StrictLogging {
 
-  sys.addShutdownHook({
-    disconnect
-  })
+  // One shutdown hook for all reconnects (see the companion object), pointed at the newest connection
+  GameConnector.current = Some(this)
 
   private var channel: Option[Channel] = None
   var handler: Option[GamePacketHandler] = None
@@ -110,4 +109,10 @@ class GameConnector(host: String,
     })
     channel = None
   }
+}
+
+object GameConnector {
+  // Logs the bot's character out when the bot stops
+  @volatile private var current: Option[GameConnector] = None
+  sys.addShutdownHook(current.foreach(_.disconnect))
 }

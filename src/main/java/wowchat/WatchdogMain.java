@@ -16,11 +16,11 @@ import java.util.List;
  *
  * Monitors two health files written by the bot:
  *
- *   wow.health     - updated every 30s with the last WoW roster request timestamp.
- *                    If stale: WoW connection is dead. Restart.
+ *   wow.health     - written every 30s while the bot is running.
+ *                    If stale: the bot is stuck. Restart.
  *
- *   discord.health - updated every time a message is successfully sent to Discord.
- *                    If stale while wow.health is fresh: Discord relay broken. Restart.
+ *   discord.health - written every 30s while the bot is running.
+ *                    If stale while wow.health is fresh: Discord is stuck. Restart.
  *
  * The bot's internal WoW reconnect loop handles normal server bounces on its own.
  * The watchdog only intervenes when the bot is truly stuck or silently broken.

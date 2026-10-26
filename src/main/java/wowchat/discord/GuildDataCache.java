@@ -27,7 +27,6 @@ public final class GuildDataCache {
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     
     // Cached data
-    private volatile long lastUpdateTime = 0;
     private Map<String, GuildMember> memberByName = new LinkedHashMap<>();
     private Map<String, String> officerNotes = new LinkedHashMap<>();
     private Set<String> ignoreLower = Collections.emptySet();
@@ -51,7 +50,6 @@ public final class GuildDataCache {
             if (rawRoster == null) {
                 memberByName.clear();
                 officerNotes.clear();
-                lastUpdateTime = System.currentTimeMillis();
                 return;
             }
             
@@ -77,7 +75,6 @@ public final class GuildDataCache {
             
             memberByName = newMembers;
             officerNotes = newNotes;
-            lastUpdateTime = System.currentTimeMillis();
             
         } catch (Throwable t) {
             System.err.println("[GuildDataCache] Refresh error: " + t.getMessage());
@@ -168,17 +165,6 @@ public final class GuildDataCache {
         }
     }
     
-    /**
-     * Check if cache is empty
-     */
-    public boolean isEmpty() {
-        lock.readLock().lock();
-        try {
-            return memberByName.isEmpty();
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
     
     // -------------------------------------------------------------------------
     // Private helpers
