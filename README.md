@@ -54,5 +54,5 @@ Linking your characters to your Discord account shows your Discord name next to 
 
 The bot picks it up within a few minutes.
 
-![How to link your Discord ID](bot/assets/discord-link.png)
+![How to link your Discord ID](doc/discord-link.png)
 

@@ -75,7 +75,7 @@ function Stop-Bot {
 $tray = New-Object System.Windows.Forms.NotifyIcon
 try {
     # Bot logo if present, otherwise java's icon
-    $png = Join-Path $dir "assets\icon.png"
+    $png = Join-Path $PSScriptRoot "icon.png"
     if (Test-Path $png) {
         $src = [System.Drawing.Image]::FromFile($png)
     } else {
