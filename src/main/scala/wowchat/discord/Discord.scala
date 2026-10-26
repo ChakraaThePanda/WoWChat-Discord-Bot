@@ -147,7 +147,7 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
         
         if (conf.hasPath(roleIdPath)) {
           val v = conf.getString(roleIdPath).trim
-          if (v.nonEmpty && v != "0" && v.forall(_.isDigit)) Some(v) else None
+          if (wowchat.discord.ConfigHelper.isId(v)) Some(v) else None
         } else None
       }
     } catch { case _: Throwable => None }

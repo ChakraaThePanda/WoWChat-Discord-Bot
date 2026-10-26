@@ -106,6 +106,10 @@ public final class AutoGuildInviteHandler {
 
             if (!config.hasPath("autoGuildInvite")) return;
             Config c = config.getConfig("autoGuildInvite");
+            if (c.hasPath("enabled") && !c.getBoolean("enabled")) {
+                System.out.println("[AutoGuildInvite] Disabled in config.");
+                return;
+            }
 
             List<String> rawTriggers = c.hasPath("triggers")
                 ? c.getStringList("triggers")

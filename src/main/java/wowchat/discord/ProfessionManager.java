@@ -401,23 +401,4 @@ public final class ProfessionManager {
         }
     }
     
-    /**
-     * Check if profession cache is enabled in config
-     */
-    public static boolean isCacheEnabled() {
-        try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
-            
-            // Check if cache is explicitly disabled
-            if (config.hasPath("professions.cache.enabled")) {
-                return config.getBoolean("professions.cache.enabled");
-            }
-            // Default enabled for backward compat
-            return true;
-        } catch (Throwable t) {
-            return true; // Default enabled
-        }
-    }
 }

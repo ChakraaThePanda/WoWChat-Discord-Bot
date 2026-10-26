@@ -39,9 +39,14 @@ public final class ConfigHelper {
     private static List<String> onlyIds(List<String> values) {
         List<String> ids = new java.util.ArrayList<>();
         for (String v : values) {
-            if (v != null && v.trim().matches("\\d+")) ids.add(v.trim());
+            if (isId(v)) ids.add(v.trim());
         }
         return ids;
+    }
+
+    /** A real Discord ID: digits, and not the config's 000000000000000000 "not set" placeholder. */
+    public static boolean isId(String value) {
+        return value != null && value.trim().matches("\\d+") && !value.trim().matches("0+");
     }
 
     // =========================================================================

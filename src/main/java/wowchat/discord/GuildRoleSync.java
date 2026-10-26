@@ -296,7 +296,7 @@ public final class GuildRoleSync {
             for (Config entry : config.getConfigList(configPath)) {
                 String rankName   = entry.getString("guildRank").toLowerCase(Locale.ROOT).trim();
                 String discordRoleId = entry.getString("discordRoleId").trim();
-                if (!rankName.isEmpty() && !discordRoleId.isEmpty()) {
+                if (!rankName.isEmpty() && ConfigHelper.isId(discordRoleId)) {
                     map.put(rankName, discordRoleId);
                 }
             }

@@ -37,7 +37,7 @@ public class GuildInactivityManager {
         float inactiveDays = getInactiveDays();
         String inactiveRoleId = getInactiveRoleId();
         
-        if (inactiveRoleId == null || inactiveRoleId.isEmpty()) {
+        if (!ConfigHelper.isId(inactiveRoleId)) {
             System.err.println("[GuildInactivity] inactiveRoleId not configured - skipping");
             return 0;
         }
