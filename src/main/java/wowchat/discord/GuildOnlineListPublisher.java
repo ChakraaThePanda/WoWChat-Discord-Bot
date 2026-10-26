@@ -482,7 +482,9 @@ public final class GuildOnlineListPublisher {
                         ids.add(Long.parseLong(idStr.trim()));
                     } catch (Throwable ignored) {}
                 } catch (Throwable ignored) {}
-                
+
+                // 000000000000000000 is the config's "not set" placeholder
+                ids.removeIf(id -> id <= 0);
                 channelIds = Collections.unmodifiableList(ids);
 
                 // Update interval - new key with fallback to old key for backward compatibility

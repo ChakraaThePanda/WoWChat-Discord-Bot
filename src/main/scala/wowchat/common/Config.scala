@@ -40,7 +40,7 @@ object WowChatConfig extends GamePackets {
     val wowConf = config.getConfig("wow")
     val guildConf = getConfigOpt(config, "guild")
     val guildEnforcementConf = getConfigOpt(config, "guildEnforcement")
-    val channelsConf = config.getConfig("chat")
+    val channelsConf = getConfigOpt(config, "chat")
     val filtersConf = getConfigOpt(config, "filters")
 
     // we gotta load this first to initialize constants that change between versions :OMEGALUL:
@@ -66,7 +66,7 @@ object WowChatConfig extends GamePackets {
       ),
       parseGuildConfig(guildConf),
       parseGuildEnforcementConfig(guildEnforcementConf),
-      parseChannels(channelsConf),
+      channelsConf.map(parseChannels).getOrElse(Seq.empty),
       parseFilters(filtersConf)
     )
   }
@@ -191,9 +191,18 @@ object WowChatConfig extends GamePackets {
     GuildEnforcementConfig(bannedClasses, bannedRaces)
   }
 
+  // Chat relay is optional: without channels the bot runs menu-only. A channel left at
+  // 000000000000000000 (the config's "not set" placeholder) is skipped.
   private def parseChannels(channelsConf: Config): Seq[ChannelConfig] = {
+    if (!channelsConf.hasPath("channels")) {
+      return Seq.empty
+    }
     channelsConf.getObjectList("channels").asScala
       .map(_.toConfig)
+      .filter(channel => {
+        val id = getOpt[String](channel, "discord.channel").getOrElse("").trim
+        id.nonEmpty && !id.forall(_ == '0')
+      })
       .map(channel => {
         val wowChannel = getOpt[String](channel, "wow.channel")
 

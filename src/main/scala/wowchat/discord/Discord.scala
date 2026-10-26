@@ -377,17 +377,24 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
             }
         })
 
-        if (Global.discordToWow.nonEmpty || Global.wowToDiscord.nonEmpty) {
-          if (firstConnect) {
-            discordConnectionCallback.connected
-            firstConnect = false
-            // Register slash commands on first connect only
-            MenuHandler.registerCommands(jda)
-          } else {
-            discordConnectionCallback.reconnected
+        // Chat relay is optional: with no channels the bot still runs, for /menu and the panels
+        val foundChannels = discordTextChannels.flatMap(c => Seq(c.getName.toLowerCase, c.getId)).toSet
+        if (firstConnect) {
+          configChannelsNames.filterNot(foundChannels.contains).foreach(name =>
+            logger.warn(s"Chat channel $name from wowchat.conf wasn't found in your Discord server, or the bot can't see it. Its chat won't be relayed.")
+          )
+          if (Global.discordToWow.isEmpty && Global.wowToDiscord.isEmpty) {
+            logger.info("No chat channels set up: running as a menu-only bot (/menu and /help).")
           }
+        }
+
+        if (firstConnect) {
+          discordConnectionCallback.connected
+          firstConnect = false
+          // Register slash commands on first connect only
+          MenuHandler.registerCommands(jda)
         } else {
-          wowchat.WoWChat.stopForSetupError("None of the chat channels in wowchat.conf were found in your Discord server. Check the channel IDs, and that the bot can see those channels.")
+          discordConnectionCallback.reconnected
         }
       case Status.DISCONNECTED =>
         discordConnectionCallback.disconnected

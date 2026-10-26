@@ -88,6 +88,8 @@ public final class ConfigHelper {
                 for (String s : config.getStringList("guildDiscordLinking.guildRoster.channelIds")) {
                     try { ids.add(Long.parseLong(s.trim())); } catch (NumberFormatException ignored) {}
                 }
+                // 000000000000000000 is the config's "not set" placeholder
+                ids.removeIf(id -> id <= 0);
                 return ids;
             } else if (config.hasPath("guildDiscordLinking.guildRoster.channelId")) {
                 try {

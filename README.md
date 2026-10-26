@@ -25,12 +25,17 @@ If you have any questions, add me on Discord: **Chakraa**
    * **New Application**, then in **Bot**, click **Reset Token** and copy it. On that page, also turn on **Presence Intent**, **Server Members Intent** and **Message Content Intent**.
    * In **OAuth2**, tick `bot` and `applications.commands`, then the **View Channels**, **Send Messages**, **Embed Links** and **Read Message History** permissions (and **Manage Roles** if you'll use role sync). Open the link it gives you to invite the bot to your server.
 3. In WoW, make an account and a character for the bot, and invite that character to your guild.
-4. Open `bot/wowchat.conf` and replace each `FILL_ME_IN`: the bot token, your server's realmlist, realm name, the bot's account, password and character, and the ID of the Discord channel for guild chat (turn on Developer Mode in Discord, then right-click the channel and click **Copy Channel ID**).
+4. Open `bot/wowchat.conf` and replace each `FILL_ME_IN`: the bot token, your server's realmlist and realm name, and the bot's account, password and character.
 5. Double-click `bot/Start WoWChat.bat`.
+
+That's all the bot needs: type `/menu` in Discord to look up players and professions.
 
 The first start installs Java if it's missing (a Windows permission popup may appear). If that fails, install [Java](https://adoptium.net/) yourself and start it again.
 
-Everything else in `wowchat.conf` is optional and explained right in the file. Features are off until you turn them on.
+#### Optional features
+Everything else in `wowchat.conf` is optional and explained right in the file. Features are off until you turn them on. To find a channel or role ID, turn on Developer Mode in Discord (**User Settings → Advanced**), then right-click the channel or role and click **Copy ID**.
+* **Chat relay**: in the `chat` section, replace `000000000000000000` with the ID of the Discord channel for guild chat, officer chat and so on.
+* **Who's Online, Guild Roster, Role Sync and more**: each has its own section with an `enabled` switch.
 
 ---
 
