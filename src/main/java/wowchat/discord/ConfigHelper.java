@@ -35,16 +35,25 @@ public final class ConfigHelper {
         }
     }
 
+    // Keeps real Discord IDs only, so a blank "" or a REPLACE_WITH_... placeholder is simply ignored
+    private static List<String> onlyIds(List<String> values) {
+        List<String> ids = new java.util.ArrayList<>();
+        for (String v : values) {
+            if (v != null && v.trim().matches("\\d+")) ids.add(v.trim());
+        }
+        return ids;
+    }
+
     // =========================================================================
-    // COMMAND ROLE IDs - Controls who can use privileged slash commands
-    // (/profession add/remove, /ignore, /unignore, /ban, /unban)
+    // COMMAND ROLE IDs - Controls who can use Admin Actions in /menu
+    // and set professions for any character
     // =========================================================================
 
     public static List<String> getCommandRoleIds() {
         try {
             Config config = getConfig();
             if (!config.hasPath("discord.commandRoleIds")) return Collections.emptyList();
-            return config.getStringList("discord.commandRoleIds");
+            return onlyIds(config.getStringList("discord.commandRoleIds"));
         } catch (Throwable t) {
             return Collections.emptyList();
         }
@@ -128,7 +137,7 @@ public final class ConfigHelper {
         try {
             Config config = getConfig();
             if (config.hasPath("guildDiscordLinking.guildRoster.audit.unlinked.roleIds")) {
-                return config.getStringList("guildDiscordLinking.guildRoster.audit.unlinked.roleIds");
+                return onlyIds(config.getStringList("guildDiscordLinking.guildRoster.audit.unlinked.roleIds"));
             }
             return Collections.emptyList();
         } catch (Throwable t) {

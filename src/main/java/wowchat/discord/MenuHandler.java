@@ -611,7 +611,10 @@ public final class MenuHandler {
     // -------------------------------------------------------------------------
 
     private static MessageEmbed helpEmbed() {
-        String note = "officer".equals(DiscordIdExtractor.getNoteLocation()) ? "Officer Note" : "Public Note";
+        // Follows guildDiscordLinking.noteLocation: members can't edit officer notes themselves
+        String noteStep = "officer".equals(DiscordIdExtractor.getNoteLocation())
+            ? "3. Ask a guild officer to paste it in your character's **Officer Note** in WoW."
+            : "3. In WoW, open the Guild panel and paste it in your character's **Public Note**.";
         return new EmbedBuilder()
             .setColor(EMBED_COLOR)
             .setTitle("WoWChat Discord Bot", GITHUB_URL)
@@ -627,7 +630,7 @@ public final class MenuHandler {
             .addField("Link your characters", String.join("\n",
                 "1. In Discord: **User Settings → Advanced → Developer Mode** on.",
                 "2. Right-click your name, **Copy User ID**.",
-                "3. In WoW, paste it in your character's guild **" + note + "** (or ask an officer to).",
+                noteStep,
                 "Linked characters show your Discord name in the guild panels, and let you set their professions."), false)
             .addField("`/help`", "Show this message.", false)
             .addField("GitHub", "[github.com/ChakraaThePanda/WoWChat-Discord-Bot](" + GITHUB_URL + ")", false)

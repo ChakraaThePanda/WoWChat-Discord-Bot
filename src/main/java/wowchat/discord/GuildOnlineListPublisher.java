@@ -94,7 +94,8 @@ public final class GuildOnlineListPublisher {
 
     // Runtime state
     private static volatile boolean started = false;
-    private static final Map<Long, String> messageIds = new ConcurrentHashMap<>(); // channelId -> messageId
+    private static final Map<Long, List<String>> messageIds = new ConcurrentHashMap<>(); // channelId -> page message IDs
+    private static final int PAGE_LIMIT = 3800; // same as the roster panels, under Discord's 4096
 
     // Cached JDA reference - extracted once via reflection, reused forever after
     // NOTE: If this is null after the first successful extraction it means something
@@ -235,33 +236,21 @@ public final class GuildOnlineListPublisher {
         List<String> onlineNames = getOnlineNames();
         Collections.sort(onlineNames, String.CASE_INSENSITIVE_ORDER);
 
-        String listContent;
-        String title;
-        if (onlineNames.isEmpty()) {
-            listContent = "No Guild Members currently online.";
-            title = "Who's Online? (0)";
-        } else {
-            // Discord caps an embed description at 4096 characters; busy guilds go past that
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < onlineNames.size(); i++) {
-                String line = "- " + onlineNames.get(i) + "\n";
-                String more = "…and " + (onlineNames.size() - i) + " more";
-                if (sb.length() + line.length() + 20 > MessageEmbed.DESCRIPTION_MAX_LENGTH) {
-                    sb.append(more);
-                    break;
-                }
-                sb.append(line);
+        // Pack into pages like the roster panels: one post per page, never splitting a line
+        List<String> pages = new ArrayList<>();
+        StringBuilder currentPage = new StringBuilder();
+        for (String name : onlineNames) {
+            String line = "- " + name + "\n";
+            if (currentPage.length() + line.length() > PAGE_LIMIT && currentPage.length() > 0) {
+                pages.add(currentPage.toString().trim());
+                currentPage = new StringBuilder();
             }
-            listContent = sb.toString().trim();
-            title = "Who's Online? (" + onlineNames.size() + ")";
+            currentPage.append(line);
         }
+        if (currentPage.length() > 0) pages.add(currentPage.toString().trim());
+        if (pages.isEmpty()) pages.add("No Guild Members currently online.");
 
-        MessageEmbed embed = new EmbedBuilder()
-            .setTitle(title)
-            .setDescription(listContent)
-            .setColor(Color.decode("#2b2d31"))
-            .setFooter(GuildEmbedUtil.getGuildRealmIdentifier() + " - Last updated: " + GuildEmbedUtil.getFormattedDate())
-            .build();
+        String footer = GuildEmbedUtil.getGuildRealmIdentifier() + " - Last updated: " + GuildEmbedUtil.getFormattedDate();
 
         // Post/update to all configured channels
         for (Long channelId : channelIds) {
@@ -271,32 +260,48 @@ public final class GuildOnlineListPublisher {
                 continue;
             }
 
-            // Find our existing message if we don't have its ID cached
-            String messageId = messageIds.get(channelId);
-            if (messageId == null) {
-                messageId = GuildEmbedUtil.findEmbedByTitlePrefixAndFooter(channel, "Who's Online?");
-                if (messageId != null) {
-                    messageIds.put(channelId, messageId);
-                }
+            // Grow or shrink this channel's message list to match the page count
+            List<String> ids = messageIds.computeIfAbsent(channelId, k -> new ArrayList<>());
+            while (ids.size() < pages.size()) ids.add(null);
+            while (ids.size() > pages.size()) {
+                String extraId = ids.remove(ids.size() - 1);
+                if (extraId == null) continue;
+                try { channel.deleteMessageById(extraId).complete(); }
+                catch (Throwable ignored) {}
             }
 
-            // Post new or edit existing
-            if (messageId == null) {
-                try {
-                    Message sent = channel.sendMessageEmbeds(embed)
-                        .complete();
-                    messageIds.put(channelId, sent.getId());
-                } catch (Throwable t) {
-                    System.err.println("[GuildOnlineList] Failed to send message to channel " + channelId + ": " + t.getMessage());
+            for (int i = 0; i < pages.size(); i++) {
+                String title = "Who's Online? (" + onlineNames.size() + ")"
+                    + (pages.size() > 1 ? " (" + (i + 1) + "/" + pages.size() + ")" : "");
+                MessageEmbed embed = new EmbedBuilder()
+                    .setTitle(title)
+                    .setDescription(pages.get(i))
+                    .setColor(Color.decode("#2b2d31"))
+                    .setFooter(footer)
+                    .build();
+
+                // Find our existing page if we don't have its ID cached
+                if (ids.get(i) == null) ids.set(i, GuildEmbedUtil.findPagedEmbed(channel, title));
+
+                if (ids.get(i) == null) {
+                    try {
+                        Message sent = channel.sendMessageEmbeds(embed).complete();
+                        ids.set(i, sent.getId());
+                    } catch (Throwable t) {
+                        System.err.println("[GuildOnlineList] Failed to send message to channel " + channelId + ": " + t.getMessage());
+                    }
+                } else {
+                    try {
+                        channel.editMessageById(ids.get(i), " ").setEmbeds(embed).complete();
+                    } catch (Throwable t) {
+                        System.err.println("[GuildOnlineList] Failed to edit message in channel " + channelId + " (will retry): " + t.getMessage());
+                        ids.set(i, null);
+                    }
                 }
-            } else {
-                try {
-                    channel.editMessageById(messageId, " ")
-                        .setEmbeds(embed)
-                        .complete();
-                } catch (Throwable t) {
-                    System.err.println("[GuildOnlineList] Failed to edit message in channel " + channelId + " (will retry): " + t.getMessage());
-                    messageIds.remove(channelId);
+
+                // Delay between pages to avoid Discord rate limits
+                if (i < pages.size() - 1) {
+                    try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
                 }
             }
         }

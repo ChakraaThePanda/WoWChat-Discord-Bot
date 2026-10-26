@@ -204,4 +204,39 @@ public final class GuildEmbedUtil {
         }
         return null;
     }
+
+    /**
+     * Find one page of a multi-post panel (Guild Roster, Who's Online) by its title and our footer.
+     * Titles are compared without the count (first number in parens), which changes between updates:
+     * "Guild Roster (264) (1/3)" matches "Guild Roster (250) (1/3)", "Who's Online? (12)" matches "Who's Online? (9)".
+     *
+     * @return Message ID if found, null otherwise
+     */
+    public static String findPagedEmbed(TextChannel channel, String pageTitle) {
+        String pattern = withoutCount(pageTitle);
+        try {
+            String ourIdentifier = getGuildRealmIdentifier();
+            List<Message> history = channel.getHistory().retrievePast(100).complete();
+            if (history == null) return null;
+
+            for (Message msg : history) {
+                User author = msg.getAuthor();
+                if (author == null || !author.isBot() || msg.getEmbeds().isEmpty()) continue;
+
+                MessageEmbed embed = msg.getEmbeds().get(0);
+                MessageEmbed.Footer footer = embed.getFooter();
+                if (embed.getTitle() != null && withoutCount(embed.getTitle()).equals(pattern)
+                        && footer != null && footer.getText() != null && footer.getText().startsWith(ourIdentifier)) {
+                    return msg.getId();
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[GuildEmbedUtil] Error searching message history: " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static String withoutCount(String title) {
+        return title.replaceFirst("\\(\\d+\\)\\s*", "").trim();
+    }
 }
