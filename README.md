@@ -51,7 +51,7 @@ Coming from an older version that started with `run.bat`? Do the same, then star
 
 ### In Discord
 Type `/menu` to open the bot's menu, or `/help` for a quick overview. Only you see the menu.
-* **Who's Online**: the guild message of the day and who's playing right now.
+* **Who's Online**: who's playing right now, with level, class and zone.
 * **Look Up Player**: level, class, zone and guild rank of any player.
 * **Professions**: add or remove your characters' professions, or **Find Crafters** for one.
 * **Ignore & Ban Lists**: see who the bot ignores or keeps out of the guild.

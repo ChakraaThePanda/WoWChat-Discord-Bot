@@ -287,14 +287,19 @@ public final class MenuHandler {
         Collections.sort(online, String.CASE_INSENSITIVE_ORDER);
 
         StringBuilder sb = new StringBuilder();
-        Option<String> motd = game.handleGmotd();
-        if (motd.isDefined()) sb.append(motd.get()).append("\n\n");
         if (online.isEmpty()) {
             sb.append("No guild members are online right now.");
         } else {
             for (String entry : online) sb.append("- ").append(entry).append("\n");
         }
-        return new Screen(embed("Who's Online? (" + online.size() + ")", sb.toString()), postAndBackRow("menu:back"));
+        MessageEmbed list = embed("Who's Online? (" + online.size() + ")", sb.toString());
+
+        // The guild message of the day, kept low-key as a footer line
+        Option<String> motd = game.getGuildMotd();
+        if (motd.isDefined()) {
+            list = new EmbedBuilder(list).setFooter(truncate("Guild MOTD: " + motd.get(), MessageEmbed.TEXT_MAX_LENGTH)).build();
+        }
+        return new Screen(list, postAndBackRow("menu:back"));
     }
 
     private static void lookUpPlayer(ModalInteractionEvent event, String name) {
@@ -316,14 +321,14 @@ public final class MenuHandler {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(embed("Look Up Player", result), resultRows))).queue();
         };
-        CommandHandler$.MODULE$.whoRequest_$eq(new WhoRequest(event.getMessageChannel(), name, Option.apply(reply)));
+        CommandHandler$.MODULE$.whoRequest_$eq(new WhoRequest(name, reply));
         scheduler.schedule(() -> {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(
                 embed("Look Up Player", "❌ The WoW server didn't answer about **" + name + "**. Try again."), resultRows))).queue();
         }, WHO_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        game.handleWho(Option.apply(name));
+        game.sendWho(name);
     }
 
     private static Screen listsScreen() {
@@ -613,7 +618,7 @@ public final class MenuHandler {
             .setDescription("Connects your WoW guild to Discord: chat goes both ways, and guild panels update themselves.")
             .addField("`/menu`", String.join("\n",
                 "Opens the bot menu. Only you can see it.",
-                "- **Who's Online**: the guild message of the day and who's playing right now.",
+                "- **Who's Online**: who's playing right now, with level, class and zone.",
                 "- **Look Up Player**: level, class, zone and guild rank of any player.",
                 "- **Professions**: add your characters' professions, or find a crafter.",
                 "- **Ignore & Ban Lists**: see who the bot ignores or keeps out of the guild.",
@@ -810,6 +815,10 @@ public final class MenuHandler {
         List<String> parts = new ArrayList<>();
         for (String s : stored) parts.add(ProfessionManager.formatProfession(s));
         return String.join(", ", parts);
+    }
+
+    private static String truncate(String text, int max) {
+        return text.length() <= max ? text : text.substring(0, max - 1) + "…";
     }
 
     private static <T> List<T> limit(List<T> list, int max) {

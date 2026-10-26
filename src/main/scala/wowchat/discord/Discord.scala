@@ -1,6 +1,5 @@
 package wowchat.discord
 
-import wowchat.commands.CommandHandler
 import wowchat.common._
 import com.typesafe.scalalogging.StrictLogging
 import com.vdurmont.emoji.EmojiParser
@@ -447,59 +446,34 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     val message = (sanitizeMessage(event.getMessage.getContentDisplay) +: event.getMessage.getAttachments.asScala.map(_.getUrl))
       .filter(_.nonEmpty)
       .mkString(" ")
-    val enableCommandsChannels = Global.config.discord.enableCommandsChannels
     logger.debug(s"RECV DISCORD MESSAGE: [${channel.getName}] [$effectiveName]: $message")
     if (message.isEmpty) {
       logger.error(s"Received a message in channel ${channel.getName} but the content was empty. You likely forgot to enable MESSAGE CONTENT INTENT for your bot in the Discord Developers portal.")
     }
 
-    if ((enableCommandsChannels.nonEmpty && !enableCommandsChannels.contains(channelName)) || !CommandHandler(channel, message)) {
-      // send to all configured wow channels
-      Global.discordToWow
-        .get(channelName)
-        .fold(Global.discordToWow.get(channelId))(Some(_))
-        .foreach(_.foreach(channelConfig => {
-          val finalMessages = if (shouldSendDirectly(message)) {
-            Seq(message)
-          } else if (channelConfig.showUsernameInWow) {
-            Discord.splitUpMessageToWow(channelConfig.format, effectiveName, message)
-          } else {
-            Discord.splitUpMessageToWow("%message", "", message)
-          }
+    // send to all configured wow channels
+    Global.discordToWow
+      .get(channelName)
+      .fold(Global.discordToWow.get(channelId))(Some(_))
+      .foreach(_.foreach(channelConfig => {
+        val finalMessages = if (channelConfig.showUsernameInWow) {
+          Discord.splitUpMessageToWow(channelConfig.format, effectiveName, message)
+        } else {
+          Discord.splitUpMessageToWow("%message", "", message)
+        }
 
-          finalMessages.foreach(finalMessage => {
-            val filter = shouldFilter(channelConfig.filters, finalMessage)
-            logger.info(s"${if (filter) "FILTERED " else ""}Discord->WoW(${
-              channelConfig.channel.getOrElse(ChatEvents.valueOf(channelConfig.tp))
-            }) $finalMessage")
-            if (!filter) {
-              Global.game.fold(logger.error("Cannot send message! Not connected to WoW!"))(handler => {
-                handler.sendMessageToWow(channelConfig.tp, finalMessage, channelConfig.channel)
-              })
-            }
-          })
-        }))
-    }
-  }
-
-  def shouldSendDirectly(message: String): Boolean = {
-    val discordConf = Global.config.discord
-    val trimmed = message.drop(1).toLowerCase
-
-    message.startsWith(".") &&
-    discordConf.enableDotCommands &&
-      (
-        discordConf.dotCommandsWhitelist.isEmpty ||
-        discordConf.dotCommandsWhitelist.contains(trimmed) ||
-        // Theoretically it would be better to construct a prefix tree for this.
-        !discordConf.dotCommandsWhitelist.forall(item => {
-          if (item.endsWith("*")) {
-            !trimmed.startsWith(item.dropRight(1).toLowerCase)
-          } else {
-            true
+        finalMessages.foreach(finalMessage => {
+          val filter = shouldFilter(channelConfig.filters, finalMessage)
+          logger.info(s"${if (filter) "FILTERED " else ""}Discord->WoW(${
+            channelConfig.channel.getOrElse(ChatEvents.valueOf(channelConfig.tp))
+          }) $finalMessage")
+          if (!filter) {
+            Global.game.fold(logger.error("Cannot send message! Not connected to WoW!"))(handler => {
+              handler.sendMessageToWow(channelConfig.tp, finalMessage, channelConfig.channel)
+            })
           }
         })
-      )
+      }))
   }
 
   def shouldFilter(filtersConfig: Option[FiltersConfig], message: String): Boolean = {

@@ -1,68 +1,18 @@
 package wowchat.commands
 
 import com.typesafe.scalalogging.StrictLogging
-import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel
-import wowchat.common.Global
-import wowchat.discord.Discord
 import wowchat.game.{GamePackets, GameResources, GuildInfo, GuildMember}
 
 import scala.collection.mutable
-import scala.util.Try
 
-case class WhoRequest(messageChannel: MessageChannel, playerName: String, reply: Option[java.util.function.Consumer[String]] = None)
+// A player lookup from /menu. The game answers later, and the answer goes to reply.
+case class WhoRequest(playerName: String, reply: java.util.function.Consumer[String])
 case class WhoResponse(playerName: String, guildName: String, lvl: Int, cls: String, race: String, gender: Option[String], zone: String)
 
 object CommandHandler extends StrictLogging {
 
-  private val NOT_ONLINE = "Bot is not online."
-
-  // make some of these configurable
-  private val trigger = "?"
-
   // gross. rewrite
   var whoRequest: WhoRequest = _
-
-  // returns back the message as an option if unhandled
-  // needs to be refactored into a Map[String, <Intelligent Command Handler Function>]
-  def apply(fromChannel: MessageChannel, message: String): Boolean = {
-    if (!message.startsWith(trigger)) {
-      return false
-    }
-
-    val splt = message.substring(trigger.length).split(" ")
-    val possibleCommand = splt(0).toLowerCase
-    val arguments = if (splt.length > 1 && splt(1).length <= 16) Some(splt(1)) else None
-
-    Try {
-      possibleCommand match {
-        case "who" | "online" =>
-          Global.game.fold({
-            Discord.sendMessage(fromChannel, NOT_ONLINE)
-            return true
-          })(game => {
-            val whoSucceeded = game.handleWho(arguments)
-            if (arguments.isDefined) {
-              whoRequest = WhoRequest(fromChannel, arguments.get)
-            }
-            whoSucceeded
-          })
-        case "gmotd" =>
-          Global.game.fold({
-            Discord.sendMessage(fromChannel, NOT_ONLINE)
-            return true
-          })(_.handleGmotd())
-      }
-    }.fold(throwable => {
-      // command not found, should send to wow chat
-      false
-    }, opt => {
-      // command found, do not send to wow chat
-      if (opt.isDefined) {
-        Discord.sendMessage(fromChannel, opt.get)
-      }
-      true
-    })
-  }
 
   // eww
   def handleWhoResponse(whoResponse: Option[WhoResponse],

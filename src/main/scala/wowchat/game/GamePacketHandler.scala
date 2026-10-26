@@ -285,25 +285,11 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     })
   }
 
-  override def handleWho(arguments: Option[String]): Option[String] = {
-    if (arguments.isDefined) {
-      val byteBuf = buildWhoMessage(arguments.get)
-      ctx.get.writeAndFlush(Packet(CMSG_WHO, byteBuf))
-      None
-    } else {
-      Some(buildGuildiesOnline)
-    }
+  override def sendWho(playerName: String): Unit = {
+    ctx.foreach(_.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(playerName))))
   }
 
-  override def handleGmotd(): Option[String] = {
-    guildMotd.map(guildMotd => {
-      val guildNotificationConfig = Global.config.guildConfig.notificationConfigs("motd")
-      guildNotificationConfig.format
-        .replace("%time", Global.getTime)
-        .replace("%user", "")
-        .replace("%message", guildMotd)
-    })
-  }
+  def getGuildMotd: Option[String] = guildMotd.filter(_.trim.nonEmpty)
 
   protected def buildWhoMessage(name: String): ByteBuf = {
     val byteBuf = PooledByteBufAllocator.DEFAULT.buffer(64, 64)
@@ -843,7 +829,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       return
     }
 
-    // Results are collected and delivered once: to the menu that asked (reply) or to the channel
+    // Results are collected and delivered once, to the menu that asked
     val results = mutable.ArrayBuffer.empty[String]
     def sendWhoMsg(msg: String): Unit = results += msg
 
@@ -893,10 +879,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       handledResponses.foreach(sendWhoMsg)
     }
 
-    req.reply match {
-      case Some(reply) => reply.accept(results.mkString("\n"))
-      case None => results.foreach(Discord.sendMessage(req.messageChannel, _))
-    }
+    req.reply.accept(results.mkString("\n"))
   }
 
   protected def parseWhoResponse(msg: Packet): Seq[WhoResponse] = {

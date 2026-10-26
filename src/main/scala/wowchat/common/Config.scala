@@ -12,7 +12,7 @@ import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.{TypeTag, typeOf}
 
 case class WowChatConfig(discord: DiscordConfig, wow: Wow, guildConfig: GuildConfig, guildEnforcement: GuildEnforcementConfig, channels: Seq[ChannelConfig], filters: Option[FiltersConfig])
-case class DiscordConfig(token: String, enableDotCommands: Boolean, dotCommandsWhitelist: Set[String], enableCommandsChannels: Set[String], enableTagFailedNotifications: Boolean, itemDatabase: Option[String])
+case class DiscordConfig(token: String, enableTagFailedNotifications: Boolean, itemDatabase: Option[String])
 case class Wow(locale: String, platform: Platform.Value, realmBuild: Option[Int], gameBuild: Option[Int], realmlist: RealmListConfig, account: Array[Byte], password: String, character: String, enableServerMotd: Boolean)
 case class RealmListConfig(name: String, host: String, port: Int)
 case class GuildConfig(notificationConfigs: Map[String, GuildNotificationConfig])
@@ -50,11 +50,6 @@ object WowChatConfig extends GamePackets {
     WowChatConfig(
       DiscordConfig(
         discordConf.getString("token"),
-        getOpt[Boolean](discordConf, "enable_dot_commands").getOrElse(true),
-        getOpt[util.List[String]](discordConf, "dot_commands_whitelist")
-          .getOrElse(new util.ArrayList[String]()).asScala.map(_.toLowerCase).toSet,
-        getOpt[util.List[String]](discordConf, "enable_commands_channels")
-          .getOrElse(new util.ArrayList[String]()).asScala.map(_.toLowerCase).toSet,
         getOpt[Boolean](discordConf, "enable_tag_failed_notifications").getOrElse(true),
         getOpt[String](discordConf, "item_database")
       ),
