@@ -121,16 +121,30 @@ public class GuildStatusRotation {
     private static void rotateStatus() {
         if (statusMessages.isEmpty()) return;
 
+        // Keep the server count fresh while any message uses it
+        wowchat.game.GamePacketHandler game = game();
+        boolean usesServerCount = false;
+        for (String msg : statusMessages) {
+            if (msg.contains("{server-online-members}")) usesServerCount = true;
+        }
+        if (usesServerCount && game != null) game.requestServerOnlineCount();
+
         // Pick next message in rotation
         String template = statusMessages.get(statusIndex % statusMessages.size());
         statusIndex++;
 
-        // Resolve {online-members} if present
+        // {online-members} is the old name of {guild-online-members}
         String message = template;
-        if (message.contains("{online-members}")) {
+        if (message.contains("{guild-online-members}") || message.contains("{online-members}")) {
             int count = getOnlineCount();
             String membersLabel = count == 1 ? "1 Guild Member" : count + " Guild Members";
-            message = message.replace("{online-members}", membersLabel);
+            message = message.replace("{guild-online-members}", membersLabel).replace("{online-members}", membersLabel);
+        }
+        if (message.contains("{server-online-members}")) {
+            int count = game == null ? -1 : game.getServerOnlineCount();
+            // Not known yet: keep the current status until the next rotation
+            if (count < 0) return;
+            message = message.replace("{server-online-members}", count == 1 ? "1 Player" : count + " Players");
         }
 
         // Push to Discord presence
@@ -144,6 +158,14 @@ public class GuildStatusRotation {
         }
     }
     
+    private static wowchat.game.GamePacketHandler game() {
+        try {
+            wowchat.game.GameCommandHandler handler = Global$.MODULE$.game().get();
+            if (handler instanceof wowchat.game.GamePacketHandler) return (wowchat.game.GamePacketHandler) handler;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     /**
      * Get the count of online guild members directly from GamePacketHandler.
      * This is more reliable than using the cache since the cache might be stale.

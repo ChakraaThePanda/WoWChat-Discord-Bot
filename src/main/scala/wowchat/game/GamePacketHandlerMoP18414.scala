@@ -170,6 +170,9 @@ class GamePacketHandlerMoP18414(realmId: Int, realmName: String, sessionKey: Arr
     byteBuf.writeBytes(name.getBytes("UTF-8"))
   }
 
+  // MoP's /who answer doesn't say how many players matched
+  override protected def parseWhoTotal(msg: Packet): Option[Int] = None
+
   override protected def parseWhoResponse(msg: Packet): Seq[WhoResponse] = {
     val displayCount = msg.readBits(6)
 
@@ -562,7 +565,7 @@ class GamePacketHandlerMoP18414(realmId: Int, realmName: String, sessionKey: Arr
     }
 
     // ignore if from an unhandled channel - unless it is a guild achievement message
-    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase)))) {
+    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
       return None
     }
 

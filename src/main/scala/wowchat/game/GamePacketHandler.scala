@@ -45,6 +45,21 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   protected var guildInfo: GuildInfo = _
   protected var guildMotd: Option[String] = None
 
+  // Players online on the whole server (see requestServerOnlineCount)
+  @volatile protected var serverOnlineCount: Option[Int] = None
+  @volatile private var lastServerCountRequest = 0L
+  // .server info gives the server's own count, both factions. Not every server lets players
+  // use it: if the first try gets no answer, the bot counts with /who instead.
+  @volatile private var serverInfoWorks: Option[Boolean] = None
+  @volatile private var serverInfoSentAt = 0L
+  private val ServerInfoInWorld = """(?i)characters in world\s*:\s*(\d+)""".r.unanchored
+  private val ServerInfoOnline = """(?i)(?:players online|online players|connected players)\s*:\s*(\d+)""".r.unanchored
+  // The other lines .server info sends, kept out of Discord
+  private val ServerInfoLine = """(?i)uptime|\brev\.|revision|update time diff|connection peak|max online|world db|characters in world|players online|online players|connected players|account security level|^\s*\|-|\bmean:|\bmedian:|percentiles""".r.unanchored
+  // /who answers carry no id, so remember what each /who we sent was for, oldest first:
+  // (is it a server count, when it was sent)
+  private val pendingWho = mutable.Queue.empty[(Boolean, Long)]
+
   protected var ctx: Option[ChannelHandlerContext] = None
   protected val playerRoster = LRUMap.empty[Long, Player]
   protected val guildRoster = mutable.Map.empty[Long, GuildMember]
@@ -124,7 +139,9 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   def getGuildiesOnlineMessage(isStatus: Boolean): String = {
-    val size = guildRoster.count(_._2.isOnline) - 1
+    // The bot's own character doesn't count
+    val characterName = Global.config.wow.character
+    val size = guildRoster.valuesIterator.count(m => m.isOnline && !m.name.equalsIgnoreCase(characterName))
     val guildies = s"guildie${if (size != 1) "s" else ""}"
 
     if (isStatus) {
@@ -286,7 +303,72 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   override def sendWho(playerName: String): Unit = {
+    queueWho(isServerCount = false)
     ctx.foreach(_.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(playerName))))
+  }
+
+  // Asks the server how many players are online, at most once a minute: with .server info
+  // when the server allows it, otherwise with an empty /who, which counts everyone this
+  // character's /who can see (on most servers, only its own faction).
+  def requestServerOnlineCount(): Unit = {
+    val now = System.currentTimeMillis
+    if (ctx.isEmpty || now - lastServerCountRequest < 60000) {
+      return
+    }
+    lastServerCountRequest = now
+
+    if (serverInfoWorks.isEmpty && serverInfoSentAt > 0) {
+      serverInfoWorks = Some(false)
+      logger.info("The server didn't answer .server info: counting online players with /who instead.")
+    }
+    if (!serverInfoWorks.contains(false)) {
+      serverInfoSentAt = now
+      sendMessageToWow(ChatEvents.CHAT_MSG_SAY, ".server info", None)
+    }
+    // Until .server info has proven itself, /who gives a count in the meantime
+    if (!serverInfoWorks.contains(true)) {
+      queueWho(isServerCount = true)
+      ctx.foreach(_.writeAndFlush(Packet(CMSG_WHO, buildWhoMessage(""))))
+    }
+  }
+
+  // System messages right after .server info are read even when no Discord channel shows them
+  protected def isServerInfoReply(tp: Byte): Boolean =
+    tp == ChatEvents.CHAT_MSG_SYSTEM && System.currentTimeMillis - serverInfoSentAt < 5000
+
+  // Reads the answer to .server info. True when the line was part of it.
+  private def handleServerInfoLine(message: String): Boolean = {
+    val line = message.replaceAll("\\|c[0-9a-fA-F]{8}|\\|r", "") // WoW color codes
+    val count = line match {
+      case ServerInfoInWorld(n) => Some(n.toInt)
+      case ServerInfoOnline(n) => Some(n.toInt)
+      case _ => None
+    }
+    count.foreach(n => {
+      if (!serverInfoWorks.contains(true)) {
+        logger.info(s"Counting online players with .server info: $n online.")
+      }
+      serverInfoWorks = Some(true)
+      serverOnlineCount = Some(n)
+    })
+    count.isDefined || ServerInfoLine.findFirstIn(line).isDefined
+  }
+
+  // For Java callers: -1 until the server has answered. The bot's own character doesn't count.
+  def getServerOnlineCount: Int = serverOnlineCount.fold(-1)(n => math.max(0, n - 1))
+
+  private def queueWho(isServerCount: Boolean): Unit = pendingWho.synchronized {
+    pendingWho.enqueue((isServerCount, System.currentTimeMillis))
+  }
+
+  // Whether the /who answer just received is a server count. Requests the server
+  // never answered (after 10 seconds) are dropped.
+  private def nextWhoIsServerCount(): Boolean = pendingWho.synchronized {
+    val now = System.currentTimeMillis
+    while (pendingWho.nonEmpty && now - pendingWho.head._2 > 10000) {
+      pendingWho.dequeue()
+    }
+    pendingWho.nonEmpty && pendingWho.dequeue()._1
   }
 
   def getGuildMotd: Option[String] = guildMotd.filter(_.trim.nonEmpty)
@@ -724,6 +806,17 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   protected def sendChatMessage(chatMessage: ChatMessage): Unit = {
+    // The answer to the bot's own .server info isn't relayed
+    if (chatMessage.guid == 0 && isServerInfoReply(chatMessage.tp)) {
+      if (handleServerInfoLine(chatMessage.message)) {
+        return
+      }
+      if (!Global.wowToDiscord.contains((chatMessage.tp, None))) {
+        logger.debug(s"Server message after .server info: ${chatMessage.message}")
+        return
+      }
+    }
+
     if (chatMessage.guid == 0) {
       Global.discord.sendMessageFromWow(None, chatMessage.message, chatMessage.tp, None)
     } else {
@@ -760,7 +853,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
 
     // ignore if from an unhandled channel
-    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase)))) {
+    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
       return None
     }
 
@@ -823,6 +916,14 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // This is actually really hard to map back to a specific request
   // because the packet doesn't include a cookie/id/requested name if none found
   private def handle_SMSG_WHO(msg: Packet): Unit = {
+    if (nextWhoIsServerCount()) {
+      // .server info is more accurate when it works
+      if (!serverInfoWorks.contains(true)) {
+        serverOnlineCount = parseWhoTotal(msg)
+      }
+      return
+    }
+
     val displayResults = parseWhoResponse(msg)
     val req = CommandHandler.whoRequest
     if (req == null) {
@@ -880,6 +981,14 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
 
     req.reply.accept(results.mkString("\n"))
+  }
+
+  // Everyone the /who matched, not only the 50 names it lists. Many servers just say 50,
+  // the list's limit, so 50 isn't trusted as a count.
+  protected def parseWhoTotal(msg: Packet): Option[Int] = {
+    val displayCount = msg.byteBuf.readIntLE
+    val matchCount = msg.byteBuf.readIntLE
+    Some(math.max(displayCount, matchCount)).filter(_ != 50)
   }
 
   protected def parseWhoResponse(msg: Packet): Seq[WhoResponse] = {
