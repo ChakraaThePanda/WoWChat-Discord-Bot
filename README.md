@@ -1,8 +1,6 @@
 # WoWChat-Discord-Bot
 A Discord bot that connects your World of Warcraft guild to your Discord server: guild chat goes both ways, and guild lists in Discord keep themselves up to date. Made mainly for 3.3.5 (Wrath of the Lich King) private servers.
 
-Based on [WoWChat](https://github.com/fjaros/wowchat) by fjaros.
-
 If you have any questions, add me on Discord: **Chakraa**
 
 ---
@@ -15,48 +13,23 @@ If you have any questions, add me on Discord: **Chakraa**
 * Professions: members list their characters' professions so others can find a crafter
 * Whisper Invite: players whisper the bot a word and get a guild invite
 * Death Ping: mention a Discord role when a guild member dies
-* Ignore and Ban lists, DM auto-reply, status rotation, and more
+* Bot Status: the bot's Discord status shows how many players or guild members are online
+* Ignore and Ban lists, class and race rules, DM auto-reply, and more
 
 ---
 
 ### Setup
-1. Download the [latest version](https://github.com/ChakraaThePanda/WoWChat-Discord-Bot/archive/refs/heads/main.zip) and extract it somewhere.
-2. Create your Discord bot in the [Discord Developer Portal](https://discord.com/developers/applications):
-   * **New Application**, then in **Bot**, click **Reset Token** and copy it. On that page, also turn on **Presence Intent**, **Server Members Intent** and **Message Content Intent**.
-   * In **OAuth2**, tick `bot` and `applications.commands`, then the **View Channels**, **Send Messages**, **Embed Links** and **Read Message History** permissions (and **Manage Roles** if you'll use role sync). Open the link it gives you to invite the bot to your server.
-3. In WoW, make an account and a character for the bot, and invite that character to your guild.
-4. Open `bot/wowchat.conf` and replace each `FILL_ME_IN`: the bot token, your server's realmlist and realm name, and the bot's account, password and character.
-5. Double-click `bot/Start WoWChat.bat`.
+1. Download the [latest version](https://github.com/ChakraaThePanda/WoWChat-Discord-Bot/archive/refs/heads/main.zip) and extract it.
+2. Create a Discord bot, and a WoW account and character for it in your guild.
+3. Fill in `bot/wowchat.conf` and double-click `bot/Start WoWChat.bat`.
 
-That's all the bot needs: type `/menu` in Discord to look up players and professions.
-
-The first start installs Java if it's missing (a Windows permission popup may appear). If that fails, install [Java](https://adoptium.net/) yourself and start it again.
-
-#### Optional features
-Everything else in `wowchat.conf` is optional and explained right in the file. Features are off until you turn them on. To find a channel or role ID, turn on Developer Mode in Discord (**User Settings → Advanced**), then right-click the channel or role and click **Copy ID**.
-* **Chat relay**: in the `chat` section, replace `000000000000000000` with the ID of the Discord channel for guild chat, officer chat and so on.
-* **Who's Online, Guild Roster, Role Sync and more**: each has its own section with an `enabled` switch.
-
----
-
-### Running the bot
-The bot runs in the background, with its logo in the system tray next to the clock. Right-click the logo to **Show log**, **Restart bot** or **Stop bot and exit**. A red dot on the logo means the bot stopped; open the log to see why.
-
-If the bot loses its connection to WoW or Discord, it restarts itself.
-
-* **Start with Windows**: press `Win + R`, type `shell:startup`, and put a shortcut to `Start WoWChat.bat` in that folder.
-* **Run in a window instead**: from a terminal in the `bot` folder, run `"Start WoWChat.bat" console`.
-
-#### Updating
-Extract the new version to a new folder, then copy `wowchat.conf` and the `data` folder from your old `bot` folder into the new one. This keeps your settings, professions, and ignore and ban lists.
-
-Coming from an older version that started with `run.bat`? Do the same, then start the bot with `Start WoWChat.bat` instead, and update your Windows startup shortcut if you had one.
+The **[setup guide](doc/setup.md)** walks you through each step, the guild rank the bot needs, the optional features, and running and updating the bot.
 
 ---
 
 ### In Discord
 Type `/menu` to open the bot's menu, or `/help` for a quick overview. Only you see the menu.
-* **Who's Online**: who's playing right now, with level, class and zone.
+* **Who's Online**: who's playing right now, with level, race, class and zone.
 * **Look Up Player**: level, class, zone and guild rank of any player.
 * **Professions**: add or remove your characters' professions, or **Find Crafters** for one.
 * **Admin Actions** (for the server owner and the admin roles you pick in `wowchat.conf`): promote, demote, ignore, unignore, ban and unban, and see the ignore and ban lists.
@@ -72,3 +45,8 @@ Linking your characters to your Discord account shows your Discord name next to 
 The bot picks it up within a few minutes.
 
 ![How to link your Discord ID](bot/assets/discord-link.png)
+
+---
+
+### Credits
+Started as a fork of [WoWChat](https://github.com/fjaros/wowchat) by fjaros, and has changed a lot since. Use this project's [setup guide](doc/setup.md), not the original's.

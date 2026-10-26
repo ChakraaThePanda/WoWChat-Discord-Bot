@@ -623,7 +623,7 @@ public final class MenuHandler {
             .setDescription("Connects your WoW guild to Discord: chat goes both ways, and guild panels update themselves.")
             .addField("`/menu`", String.join("\n",
                 "Opens the bot menu. Only you can see it.",
-                "- **Who's Online**: who's playing right now, with level, class and zone.",
+                "- **Who's Online**: who's playing right now, with level, race, class and zone.",
                 "- **Look Up Player**: level, class, zone and guild rank of any player.",
                 "- **Professions**: add your characters' professions, or find a crafter.",
                 "- **Admin Actions** *(bot admins)*: promote, demote, ignore and ban, and see the ignore and ban lists.",
