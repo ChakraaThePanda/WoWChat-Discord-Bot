@@ -19,14 +19,7 @@ Download the [latest version](https://github.com/ChakraaThePanda/WoWChat-Discord
 
 ### 3. Create the bot's WoW character
 1. Make a WoW account and a character for the bot, and invite that character to your guild.
-2. Give it a guild rank that can do what you'll ask of it:
-
-| To use | The bot's rank needs |
-|---|---|
-| Discord IDs in officer notes (`noteLocation = "officer"`) | View Officer Note |
-| Promote and Demote in `/menu`, automatic promotions | Promote and Demote (only works on ranks below its own) |
-| Ban list, class and race rules | Remove Member |
-| Whisper Invite | Invite Member |
+2. Give it a guild rank with the permissions your features need. The comments in `wowchat.conf` say when a feature needs one, such as reading officer notes, inviting, removing, promoting or demoting members. The bot can only promote, demote or remove members below its own rank.
 
 ### 4. Fill in the config
 Open `bot/wowchat.conf` in a text editor (Notepad works) and replace each `FILL_ME_IN`:
@@ -48,29 +41,7 @@ Everything else in `wowchat.conf` is optional, off until you turn it on, and exp
 
 To find a channel or role ID, turn on Developer Mode in Discord (**User Settings → Advanced → Developer Mode**), then right-click the channel or role and click **Copy ID**. An ID left at `000000000000000000` means "not set".
 
-| Feature | Config section | What to set |
-|---|---|---|
-| Chat Relay | `chat` | A Discord channel ID for each chat you want relayed (guild, officer, say, system...) |
-| Guild events (joins, promotions...) | `guild` | Which events to post. They go to the guild chat channel. |
-| Who's Online | `guildOnlineList` | The channel to post the list in |
-| Bot Status | `guildStatus` | The status messages, with `{guild-online-members}` or `{server-online-members}` |
-| Guild Roster, Stats and Audit | `guildDiscordLinking` → `guildRoster` | The channel, and which panels and audit checks to show |
-| Role Sync | `guildDiscordLinking` → `roleSync` | Which Discord role goes with each guild rank |
-| Inactivity tracking | `guildDiscordLinking` → `inactivity` | How many days, and the role to give |
-| Death Ping | `guildDeathNotifications` | The role to ping. Deaths come in as system messages, so relay those too. |
-| Whisper Invite | `autoGuildInvite` | The trigger words |
-| Class and race rules | `guildEnforcement` | Classes and races to kick |
-| DM auto-reply | `dmAutoReply` | The reply text |
-| Admin roles | `discord` → `commandRoleIds` | Discord roles that can use Admin Actions in `/menu` |
-
 Most settings are read when the bot starts, so restart it after changing the config (right-click the tray logo, **Restart bot**). If the config has a mistake, the bot stops and the log says which line to fix.
-
-#### Things that depend on your WoW server
-Private servers differ, so a few features only work if the server supports them:
-* **Death Ping** looks for the server's death messages. If your server words them differently, change `patterns` in `guildDeathNotifications` to match.
-* **`{server-online-members}`** asks the server with `.server info`. If players can't use that command, the bot counts with `/who` instead, which usually only sees one faction.
-* **Look Up Player** uses `/who`, which on most servers only finds players of the bot's faction.
-* **Warden** (anti-cheat): if the bot keeps getting disconnected, set `platform = Mac` in the `wow` section.
 
 ---
 
