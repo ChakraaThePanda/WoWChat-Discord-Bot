@@ -91,6 +91,8 @@ public final class GuildOnlineListPublisher {
     private static volatile List<Long> channelIds   = Collections.emptyList();
     private static volatile int        updateMinutes = 5;
     private static volatile Set<String> ignoreLower  = Collections.emptySet();
+    // Channels of a list that's turned off: its old post there is removed once at startup
+    private static volatile List<Long> offChannelIds = Collections.emptyList();
 
     // Runtime state
     private static volatile boolean started = false;
@@ -143,6 +145,18 @@ public final class GuildOnlineListPublisher {
                     System.err.println("[GuildOnlineList] Unexpected error in update tick: " + t.getMessage());
                 }
             }, initialDelaySec, periodSec, TimeUnit.SECONDS);
+        }
+
+        // Turned off: remove the list's old post
+        if (!offChannelIds.isEmpty()) {
+            scheduler.schedule(() -> {
+                JDA jda = getJda();
+                if (jda == null) return;
+                for (long cid : offChannelIds) {
+                    TextChannel channel = jda.getTextChannelById(cid);
+                    if (channel != null) GuildEmbedUtil.deleteStrayPages(channel, "Who's Online?", Collections.emptySet());
+                }
+            }, initialDelaySec, TimeUnit.SECONDS);
         }
 
         // Health file writer - runs every 30s regardless of guild list update interval
@@ -229,6 +243,12 @@ public final class GuildOnlineListPublisher {
         String guildIdentifier = GuildEmbedUtil.getGuildRealmIdentifier();
         if (guildIdentifier.equals("Unknown Guild (Unknown Realm)")) {
             // Bot is disconnected from game server, skip this update
+            return;
+        }
+        // Also skip while (re)connecting, before the guild list has arrived: it would post an empty list
+        Option<GameCommandHandler> game = Global$.MODULE$.game();
+        if (game == null || game.isEmpty() || !(game.get() instanceof GamePacketHandler)
+                || ((GamePacketHandler) game.get()).guildRoster().isEmpty()) {
             return;
         }
 
@@ -458,6 +478,13 @@ public final class GuildOnlineListPublisher {
             if (!enabled) {
                 System.out.println("[GuildOnlineList] Feature disabled in config");
                 channelIds = Collections.emptyList();
+                try {
+                    List<Long> off = new ArrayList<>();
+                    for (Number n : config.getNumberList("guildOnlineList.channelIds")) {
+                        if (n.longValue() > 0) off.add(n.longValue());
+                    }
+                    offChannelIds = off;
+                } catch (Throwable ignored) {}
                 updateMinutes = 5;
                 ignoreLower = Collections.emptySet();
             } else {

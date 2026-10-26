@@ -165,6 +165,13 @@ public final class GuildRosterPublisher {
                 continue;
             }
 
+            // Panels turned off in wowchat.conf remove their post
+            removeIfOff(channel, "Guild Sync Audit", ConfigHelper.isAuditEnabled());
+            removeIfOff(channel, "Guild Statistics", ConfigHelper.isStatsEnabled());
+            if (removeIfOff(channel, "Guild Roster", ConfigHelper.isRosterPanelEnabled())) {
+                rosterMessageIdsByChannel.remove(channel.getIdLong());
+            }
+
             // --- Build and post audit embed ---
             GuildDiscordAuditPublisher.publish(channel);
             
@@ -180,6 +187,22 @@ public final class GuildRosterPublisher {
                 postOrEditRoster(channel, discordGuild, rosterNotes, inactiveCount);
             }
         }
+    }
+
+    // Panels already removed per channel, so the channel is only searched once while one stays off
+    private static final Map<Long, Set<String>> removedPanels = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Removes the bot's post for a panel that's turned off. True when it just removed it. */
+    private static boolean removeIfOff(TextChannel channel, String title, boolean on) {
+        Set<String> removed = removedPanels.computeIfAbsent(channel.getIdLong(),
+            k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
+        if (on) {
+            removed.remove(title);
+            return false;
+        }
+        if (!removed.add(title)) return false;
+        GuildEmbedUtil.deleteStrayPages(channel, title, Collections.emptySet());
+        return true;
     }
 
     // -------------------------------------------------------------------------
