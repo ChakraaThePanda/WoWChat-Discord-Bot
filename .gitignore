@@ -1,2 +1,5 @@
+# Build output
+/src/target/
+
 # Runtime data (ignore and ban lists, professions, rank history, log)
-/data/
+/bot/data/
