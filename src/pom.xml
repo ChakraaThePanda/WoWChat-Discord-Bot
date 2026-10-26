@@ -70,7 +70,14 @@
         </dependency>
     </dependencies>
 
+    <!-- This file lives in src/, next to the code; builds go to src/target -->
     <build>
+        <sourceDirectory>main/java</sourceDirectory>
+        <resources>
+            <resource>
+                <directory>main/resources</directory>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
@@ -181,9 +188,9 @@
                                       tofile="${project.build.directory}/watchdog.jar" overwrite="true"/>
                                 <!-- Ready to run: the bot folder uses these straight away -->
                                 <copy file="${project.build.directory}/watchdog.jar"
-                                      tofile="${project.basedir}/bot/lib/watchdog.jar" overwrite="true"/>
+                                      tofile="${project.basedir}/../bot/lib/watchdog.jar" overwrite="true"/>
                                 <copy file="${project.build.directory}/wowchat.jar"
-                                      tofile="${project.basedir}/bot/lib/wowchat.jar" overwrite="true"/>
+                                      tofile="${project.basedir}/../bot/lib/wowchat.jar" overwrite="true"/>
                                 <!-- Only keep wowchat.jar and watchdog.jar: drop the in-between jars -->
                                 <delete>
                                     <fileset dir="${project.build.directory}" includes="${project.artifactId}-*.jar original-*.jar"/>
