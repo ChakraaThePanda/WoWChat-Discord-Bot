@@ -314,8 +314,9 @@ public final class MenuHandler {
 
         // The game answers later through GamePacketHandler.handle_SMSG_WHO, which calls reply
         AtomicBoolean answered = new AtomicBoolean(false);
-        List<ActionRow> resultRows = Collections.singletonList(ActionRow.of(
-            postButton(), Button.primary("menu:who", "Look Up Another"), backButton("menu:back")));
+        List<ActionRow> resultRows = Arrays.asList(
+            ActionRow.of(postButton(), Button.primary("menu:who", "Look Up Another")),
+            backRow());
         Consumer<String> reply = result -> {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(embed("Look Up Player", result), resultRows))).queue();
@@ -372,8 +373,8 @@ public final class MenuHandler {
         rows.add(ActionRow.of(
             Button.success("menu:prof:add", "Add / Update").withDisabled(mine.isEmpty() && !admin),
             Button.danger("menu:prof:remove", "Remove").withDisabled(!anyProfession && !admin),
-            Button.primary("menu:prof:find", "Find Crafters"),
-            backButton("menu:back")));
+            Button.primary("menu:prof:find", "Find Crafters")));
+        rows.add(backRow());
         return new Screen(embed("Professions", sb.toString()), rows);
     }
 
@@ -485,10 +486,9 @@ public final class MenuHandler {
                 Button.primary("menu:admin:ask:ignore", "Ignore"),
                 Button.secondary("menu:admin:list:unignore:0", "Unignore"),
                 Button.danger("menu:admin:ask:ban", "Ban"),
-                Button.secondary("menu:admin:list:unban:0", "Unban")),
-            ActionRow.of(
-                Button.primary("menu:admin:lists", "Ignore & Ban Lists"),
-                backButton("menu:back")));
+                Button.secondary("menu:admin:list:unban:0", "Unban"),
+                Button.primary("menu:admin:lists", "Ignore & Ban Lists")),
+            backRow());
         return new Screen(embed("Admin Actions", description), rows);
     }
 
@@ -693,8 +693,9 @@ public final class MenuHandler {
         return Button.primary("menu:post", "Post to channel");
     }
 
+    // Back always sits on its own row, under the screen's other buttons
     private static List<ActionRow> postAndBackRow(String backTarget) {
-        return Collections.singletonList(ActionRow.of(postButton(), backButton(backTarget)));
+        return Arrays.asList(ActionRow.of(postButton()), backRow(backTarget));
     }
 
     private static List<ActionRow> rows(List<Button> buttons) {
