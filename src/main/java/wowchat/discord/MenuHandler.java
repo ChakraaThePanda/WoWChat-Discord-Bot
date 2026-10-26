@@ -117,7 +117,6 @@ public final class MenuHandler {
 
             if (id.equals("menu:back"))   { show(event, null, mainScreen(event)); return; }
             if (id.equals("menu:online")) { show(event, null, onlineScreen()); return; }
-            if (id.equals("menu:lists"))  { show(event, null, listsScreen()); return; }
             if (id.equals("menu:post"))   { postToChannel(event); return; }
             if (id.equals("menu:who"))    { event.replyModal(nameModal("modal:who", "Look Up Player")).queue(); return; }
 
@@ -127,6 +126,7 @@ public final class MenuHandler {
             if (id.equals("menu:prof:find"))   { show(event, null, findCraftersPickScreen()); return; }
 
             if (id.equals("menu:admin")) { show(event, null, adminScreen()); return; }
+            if (id.equals("menu:admin:lists")) { show(event, null, listsScreen()); return; }
             if (id.startsWith("menu:admin:ask:")) {
                 String action = id.substring("menu:admin:ask:".length());
                 event.replyModal(nameModal("modal:admin:" + action, ADMIN_TITLES.get(action))).queue();
@@ -269,7 +269,6 @@ public final class MenuHandler {
         buttons.add(Button.success("menu:online", "Who's Online"));
         buttons.add(Button.primary("menu:who", "Look Up Player"));
         buttons.add(Button.primary("menu:prof", "Professions"));
-        buttons.add(Button.primary("menu:lists", "Ignore & Ban Lists"));
         if (isAdmin(event)) buttons.add(Button.primary("menu:admin", "Admin Actions"));
 
         return new Screen(embed("WoWChat Menu", String.join("\n", lines)), rows(buttons));
@@ -338,7 +337,7 @@ public final class MenuHandler {
         appendNameList(sb, "Ignored", scala.collection.JavaConverters.seqAsJavaList(IgnoreManager.getIgnoredPlayers()));
         sb.append("\n");
         appendNameList(sb, "Banned", BanManager.getBannedPlayers());
-        return new Screen(embed("Ignore & Ban Lists", sb.toString()), postAndBackRow("menu:back"));
+        return new Screen(embed("Ignore & Ban Lists", sb.toString()), postAndBackRow("menu:admin"));
     }
 
     private static void appendNameList(StringBuilder sb, String title, List<String> names) {
@@ -476,7 +475,8 @@ public final class MenuHandler {
             "**Promote / Demote**: move a guild member one rank up or down in-game.",
             "**Ignore**: stop relaying a player's messages to Discord.",
             "**Ban**: ignore a player and kick them from the guild automatically.",
-            "**Unignore / Unban**: pick someone from the list to remove them.");
+            "**Unignore / Unban**: pick someone from the list to remove them.",
+            "**Ignore & Ban Lists**: see everyone on both lists.");
         List<ActionRow> rows = Arrays.asList(
             ActionRow.of(
                 Button.success("menu:admin:ask:promote", "Promote"),
@@ -486,7 +486,9 @@ public final class MenuHandler {
                 Button.secondary("menu:admin:list:unignore:0", "Unignore"),
                 Button.danger("menu:admin:ask:ban", "Ban"),
                 Button.secondary("menu:admin:list:unban:0", "Unban")),
-            backRow());
+            ActionRow.of(
+                Button.primary("menu:admin:lists", "Ignore & Ban Lists"),
+                backButton("menu:back")));
         return new Screen(embed("Admin Actions", description), rows);
     }
 
@@ -624,8 +626,7 @@ public final class MenuHandler {
                 "- **Who's Online**: who's playing right now, with level, class and zone.",
                 "- **Look Up Player**: level, class, zone and guild rank of any player.",
                 "- **Professions**: add your characters' professions, or find a crafter.",
-                "- **Ignore & Ban Lists**: see who the bot ignores or keeps out of the guild.",
-                "- **Admin Actions** *(bot admins)*: promote, demote, ignore and ban.",
+                "- **Admin Actions** *(bot admins)*: promote, demote, ignore and ban, and see the ignore and ban lists.",
                 "Most views have **Post to channel** to share them."), false)
             .addField("Link your characters", String.join("\n",
                 "1. In Discord: **User Settings → Advanced → Developer Mode** on.",

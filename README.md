@@ -54,8 +54,7 @@ Type `/menu` to open the bot's menu, or `/help` for a quick overview. Only you s
 * **Who's Online**: who's playing right now, with level, class and zone.
 * **Look Up Player**: level, class, zone and guild rank of any player.
 * **Professions**: add or remove your characters' professions, or **Find Crafters** for one.
-* **Ignore & Ban Lists**: see who the bot ignores or keeps out of the guild.
-* **Admin Actions** (for the server owner and the admin roles you pick in `wowchat.conf`): promote, demote, ignore, unignore, ban and unban.
+* **Admin Actions** (for the server owner and the admin roles you pick in `wowchat.conf`): promote, demote, ignore, unignore, ban and unban, and see the ignore and ban lists.
 
 Most views have **Post to channel** to share them with everyone.
 
