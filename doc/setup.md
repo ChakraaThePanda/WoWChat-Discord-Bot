@@ -34,7 +34,7 @@ Open `bot/wowchat.conf` in a text editor (Notepad works) and replace each `FILL_
 * `realmlist` and `realm`: your server's address and realm name, as in your WoW `realmlist.wtf`
 * `account`, `password` and `character`: the bot's WoW login from step 3
 
-Check that `version` matches your server (3.3.5 for Wrath of the Lich King). Save the file.
+Set `version` to your server's game version (the list of versions is right below it in the file). Save the file.
 
 ### 5. Start the bot
 Double-click `bot/Start WoWChat.bat`. The first start installs Java if it's missing (a Windows permission popup may appear). If that fails, install [Java](https://adoptium.net/) yourself and start it again.
