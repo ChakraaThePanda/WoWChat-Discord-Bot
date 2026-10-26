@@ -52,10 +52,15 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // use it: if the first try gets no answer, the bot counts with /who instead.
   @volatile private var serverInfoWorks: Option[Boolean] = None
   @volatile private var serverInfoSentAt = 0L
+  // How good the best count line this server sends is (3 = real players, 1 = connected)
+  @volatile private var serverInfoBestLine = 0
+  // Best first: real players only (servers with playerbots can add this line), everyone in
+  // the world, then everyone connected
+  private val ServerInfoRealPlayers = """(?i)real players in world\s*:\s*(\d+)""".r.unanchored
   private val ServerInfoInWorld = """(?i)characters in world\s*:\s*(\d+)""".r.unanchored
   private val ServerInfoOnline = """(?i)(?:players online|online players|connected players)\s*:\s*(\d+)""".r.unanchored
   // The other lines .server info sends, kept out of Discord
-  private val ServerInfoLine = """(?i)uptime|\brev\.|revision|update time diff|connection peak|max online|world db|characters in world|players online|online players|connected players|account security level|^\s*\|-|\bmean:|\bmedian:|percentiles""".r.unanchored
+  private val ServerInfoLine = """(?i)uptime|\brev\.|revision|update time diff|connection peak|max online|world db|characters in world|players in world|bots in world|players online|online players|connected players|account security level|^\s*\|-|\bmean:|\bmedian:|percentiles""".r.unanchored
   // /who answers carry no id, so remember what each /who we sent was for, oldest first:
   // (is it a server count, when it was sent)
   private val pendingWho = mutable.Queue.empty[(Boolean, Long)]
@@ -340,17 +345,20 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   private def handleServerInfoLine(message: String): Boolean = {
     val line = message.replaceAll("\\|c[0-9a-fA-F]{8}|\\|r", "") // WoW color codes
     val count = line match {
-      case ServerInfoInWorld(n) => Some(n.toInt)
-      case ServerInfoOnline(n) => Some(n.toInt)
+      case ServerInfoRealPlayers(n) => Some((3, n.toInt))
+      case ServerInfoInWorld(n) => Some((2, n.toInt))
+      case ServerInfoOnline(n) => Some((1, n.toInt))
       case _ => None
     }
-    count.foreach(n => {
-      if (!serverInfoWorks.contains(true)) {
+    // A line is only used when the server doesn't send a better one
+    count.filter(_._1 >= serverInfoBestLine).foreach { case (rank, n) =>
+      if (rank > serverInfoBestLine) {
         logger.info(s"Counting online players with .server info: $n online.")
       }
+      serverInfoBestLine = rank
       serverInfoWorks = Some(true)
       serverOnlineCount = Some(n)
-    })
+    }
     count.isDefined || ServerInfoLine.findFirstIn(line).isDefined
   }
 
