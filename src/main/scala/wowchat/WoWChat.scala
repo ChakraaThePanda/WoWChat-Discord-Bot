@@ -11,7 +11,8 @@ import io.netty.channel.nio.NioEventLoopGroup
 
 object WoWChat extends StrictLogging {
 
-  private val RELEASE = "v1.4.0"
+  // The build date, e.g. 2026.10.26 (set when the jar is built)
+  private val RELEASE = Option(getClass.getPackage.getImplementationVersion).getOrElse("dev build")
 
   // Tells the watchdog not to restart: the same mistake would just happen again
   val SETUP_ERROR_EXIT_CODE = 2
@@ -23,7 +24,7 @@ object WoWChat extends StrictLogging {
   }
 
   def main(args: Array[String]): Unit = {
-    logger.info(s"Running WoWChat - $RELEASE")
+    logger.info(s"Running WoWChat - version $RELEASE")
     val confFile = if (args.nonEmpty) {
       args(0)
     } else {
