@@ -241,9 +241,16 @@ public final class GuildOnlineListPublisher {
             listContent = "No Guild Members currently online.";
             title = "Who's Online? (0)";
         } else {
+            // Discord caps an embed description at 4096 characters; busy guilds go past that
             StringBuilder sb = new StringBuilder();
-            for (String name : onlineNames) {
-                sb.append("- ").append(name).append("\n");
+            for (int i = 0; i < onlineNames.size(); i++) {
+                String line = "- " + onlineNames.get(i) + "\n";
+                String more = "…and " + (onlineNames.size() - i) + " more";
+                if (sb.length() + line.length() + 20 > MessageEmbed.DESCRIPTION_MAX_LENGTH) {
+                    sb.append(more);
+                    break;
+                }
+                sb.append(line);
             }
             listContent = sb.toString().trim();
             title = "Who's Online? (" + onlineNames.size() + ")";
