@@ -236,6 +236,35 @@ public final class GuildEmbedUtil {
         return null;
     }
 
+    /**
+     * Delete this panel's old pages that aren't in use anymore: leftovers from before a restart,
+     * when the panel had more pages, or duplicates. Only touches our own posts (same footer)
+     * whose title is the panel's, e.g. "Guild Roster (264) (3/3)" for titleBase "Guild Roster".
+     */
+    public static void deleteStrayPages(TextChannel channel, String titleBase, java.util.Collection<String> keepIds) {
+        try {
+            String ourIdentifier = getGuildRealmIdentifier();
+            String selfId = channel.getJDA().getSelfUser().getId();
+            List<Message> history = channel.getHistory().retrievePast(100).complete();
+            if (history == null) return;
+
+            for (Message msg : history) {
+                if (!msg.getAuthor().getId().equals(selfId) || msg.getEmbeds().isEmpty() || keepIds.contains(msg.getId())) continue;
+
+                MessageEmbed embed = msg.getEmbeds().get(0);
+                MessageEmbed.Footer footer = embed.getFooter();
+                String title = embed.getTitle() == null ? "" : withoutCount(embed.getTitle());
+                boolean isThisPanel = title.equals(titleBase) || title.matches(java.util.regex.Pattern.quote(titleBase) + " \\(\\d+/\\d+\\)");
+                if (isThisPanel && footer != null && footer.getText() != null && footer.getText().startsWith(ourIdentifier)) {
+                    System.out.println("[GuildEmbedUtil] Removing old page: " + embed.getTitle());
+                    msg.delete().complete();
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[GuildEmbedUtil] Error removing old pages: " + t.getMessage());
+        }
+    }
+
     private static String withoutCount(String title) {
         return title.replaceFirst("\\(\\d+\\)\\s*", "").trim();
     }

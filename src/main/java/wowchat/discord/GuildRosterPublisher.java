@@ -355,6 +355,8 @@ public final class GuildRosterPublisher {
                 catch (Throwable ignored) {}
             }
         }
+        // Pages we had to look up (after a restart or a deleted post) may leave old ones behind
+        boolean lookedUpPages = rosterMessageIds.contains(null);
 
         // Post or edit each page
         int totalMembers = sortedChars.size() - (int) sortedChars.stream().filter(n -> ignoreLower.contains(n.toLowerCase(Locale.ROOT))).count();
@@ -409,6 +411,8 @@ public final class GuildRosterPublisher {
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
+
+        if (lookedUpPages) GuildEmbedUtil.deleteStrayPages(channel, "Guild Roster", rosterMessageIds);
     }
 
     // -------------------------------------------------------------------------

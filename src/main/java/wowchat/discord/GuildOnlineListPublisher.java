@@ -269,6 +269,8 @@ public final class GuildOnlineListPublisher {
                 try { channel.deleteMessageById(extraId).complete(); }
                 catch (Throwable ignored) {}
             }
+            // Pages we had to look up (after a restart or a deleted post) may leave old ones behind
+            boolean lookedUpPages = ids.contains(null);
 
             for (int i = 0; i < pages.size(); i++) {
                 String title = "Who's Online? (" + onlineNames.size() + ")"
@@ -304,6 +306,8 @@ public final class GuildOnlineListPublisher {
                     try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
                 }
             }
+
+            if (lookedUpPages) GuildEmbedUtil.deleteStrayPages(channel, "Who's Online?", ids);
         }
     }
 
