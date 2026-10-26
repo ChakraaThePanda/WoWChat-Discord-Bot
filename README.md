@@ -6,15 +6,25 @@ If you have any questions, add me on Discord: **Chakraa**
 ---
 
 ### Features
-* Chat Relay: guild, officer and other in-game chats, mirrored to Discord channels and back
+From [WoWChat](https://github.com/fjaros/wowchat) by fjaros, which this bot started as a fork of:
+* Chat Relay: guild, officer, say, yell, emote, system and custom in-game channels, mirrored to Discord channels and back
+* Guild events: joins, leaves, promotions, achievements and more, posted to Discord
+* WoW item and achievement links turned into database links, and Discord @mentions from WoW
+* Message filters, to keep spam out of Discord
+* Works without a WoW client, on Vanilla through Mists of Pandaria servers
+
+Added in this version:
+* `/menu`: Who's Online, Look Up Player, Professions and Admin Actions, all with buttons
 * Who's Online: a post that always shows who's online, with level, race, class and zone
 * Guild Roster: every guild member grouped by Discord account, with guild stats and an officer checklist
-* Role Sync: Discord roles follow in-game guild ranks
+* Promotion timers, with optional automatic promotions
+* Role Sync: Discord roles follow in-game guild ranks, plus inactivity tracking
 * Professions: members list their characters' professions so others can find a crafter
 * Whisper Invite: players whisper the bot a word and get a guild invite
 * Death Ping: mention a Discord role when a guild member dies
 * Bot Status: the bot's Discord status shows how many players or guild members are online
-* Ignore and Ban lists, class and race rules, DM auto-reply, and more
+* Ignore and Ban lists, class and race rules, and a DM auto-reply
+* Runs from the system tray, installs Java if needed, and restarts itself if it gets stuck
 
 ---
 
@@ -23,7 +33,7 @@ If you have any questions, add me on Discord: **Chakraa**
 2. Create a Discord bot, and a WoW account and character for it in your guild.
 3. Fill in `bot/wowchat.conf` and double-click `bot/Start WoWChat.bat`.
 
-The **[setup guide](doc/setup.md)** walks you through each step, the guild rank the bot needs, the optional features, and running and updating the bot.
+The **[setup guide](doc/setup.md)** walks you through each step, then turning on more features, and running and updating the bot.
 
 ---
 
@@ -46,7 +56,3 @@ The bot picks it up within a few minutes.
 
 ![How to link your Discord ID](bot/assets/discord-link.png)
 
----
-
-### Credits
-Started as a fork of [WoWChat](https://github.com/fjaros/wowchat) by fjaros, and has changed a lot since. Use this project's [setup guide](doc/setup.md), not the original's.
