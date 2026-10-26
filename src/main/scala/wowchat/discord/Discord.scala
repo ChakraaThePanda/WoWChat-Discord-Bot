@@ -158,6 +158,7 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
   private val guildDeathPatterns: Seq[java.util.regex.Pattern] = {
     val defaults = Seq(
       """\[Hardcore Death\] (\S+)""",
+      """^(\S+) the level \d+ .+ has fallen to""",
       """^(\S+) has fallen at level""",
       """^(\S+) has been slain by"""
     )
