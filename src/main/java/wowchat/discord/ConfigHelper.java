@@ -50,6 +50,32 @@ public final class ConfigHelper {
     }
 
     // =========================================================================
+    // PROFESSIONS - How long a character keeps their professions after leaving
+    // =========================================================================
+
+    /**
+     * Hours from professions.keepHoursAfterLeaving (default 1). Older configs used
+     * professions.cache.graceHours, with cache.enabled = false meaning 0.
+     */
+    public static double getProfessionKeepHours() {
+        try {
+            Config config = getConfig();
+            if (config.hasPath("professions.keepHoursAfterLeaving")) {
+                return Math.max(0, config.getDouble("professions.keepHoursAfterLeaving"));
+            }
+            if (config.hasPath("professions.cache.enabled") && !config.getBoolean("professions.cache.enabled")) {
+                return 0;
+            }
+            if (config.hasPath("professions.cache.graceHours")) {
+                return Math.max(0, config.getDouble("professions.cache.graceHours"));
+            }
+        } catch (Throwable t) {
+            System.err.println("[ConfigHelper] Error reading professions.keepHoursAfterLeaving: " + t.getMessage());
+        }
+        return 1;
+    }
+
+    // =========================================================================
     // COMMAND ROLE IDs - Controls who can use Admin Actions in /menu
     // and set professions for any character
     // =========================================================================

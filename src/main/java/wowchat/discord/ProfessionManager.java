@@ -33,7 +33,8 @@ public final class ProfessionManager {
 
     public static final int MAX_PROFESSIONS = 2;
     private static final String FILE = "data/professions.json";
-    private static final long STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+    // How long a character keeps their professions after leaving the guild
+    private static final long KEEP_AFTER_LEAVING_MS = (long) (ConfigHelper.getProfessionKeepHours() * 60 * 60 * 1000);
 
     // charName (lowercased) -> sorted list of professions
     private static final Map<String, List<String>> data = new LinkedHashMap<>();
@@ -78,7 +79,7 @@ public final class ProfessionManager {
      * Called on every guild roster update. 
      * 
      * For members currently in the guild: updates their timestamp to prevent cleanup.
-     * For members not in the guild: only removes if entry is older than 1 hour.
+     * For members not in the guild: only removes if entry is older than professions.keepHoursAfterLeaving.
      * 
      * This grace period allows characters that leave and rejoin quickly to keep their professions.
      */
@@ -94,14 +95,14 @@ public final class ProfessionManager {
             }
         }
         
-        // Remove entries for non-members that are older than 1 hour
+        // Remove entries for non-members not seen in the guild for longer than the keep time
         java.util.Iterator<String> it = data.keySet().iterator();
         while (it.hasNext()) {
             String key = it.next();
             if (!currentMemberNamesLower.contains(key)) {
                 Long timestamp = lastUpdated.get(key);
                 long age = timestamp == null ? 0 : (now - timestamp);
-                if (timestamp == null || age > STALE_THRESHOLD_MS) {
+                if (timestamp == null || age > KEEP_AFTER_LEAVING_MS) {
                     it.remove();
                     lastUpdated.remove(key);
                     changed = true;
