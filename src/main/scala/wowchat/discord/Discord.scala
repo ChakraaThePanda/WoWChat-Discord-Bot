@@ -153,6 +153,48 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     } catch { case _: Throwable => None }
   }
 
+  // What counts as a death: guildDeathNotifications.patterns, regexes whose first ( ) is
+  // the player's name. Servers word death messages differently, so these can be changed.
+  private val guildDeathPatterns: Seq[java.util.regex.Pattern] = {
+    val defaults = Seq(
+      """\[Hardcore Death\] (\S+)""",
+      """^(\S+) has fallen at level""",
+      """^(\S+) has been slain by"""
+    )
+    try {
+      val conf = com.typesafe.config.ConfigFactory.parseFile(
+        new java.io.File(System.getProperty("wowchat.configFile", "wowchat.conf")))
+        .resolve(com.typesafe.config.ConfigResolveOptions.defaults().setAllowUnresolved(true))
+      val patterns = if (conf.hasPath("guildDeathNotifications.patterns")) {
+        conf.getStringList("guildDeathNotifications.patterns").asScala
+      } else {
+        defaults
+      }
+      patterns.filter(_.trim.nonEmpty).flatMap(p => {
+        try {
+          Some(java.util.regex.Pattern.compile(p))
+        } catch {
+          case e: Throwable =>
+            logger.error(s"Death ping pattern isn't a valid regex, skipping it: $p (${e.getMessage})")
+            None
+        }
+      })
+    } catch { case _: Throwable => defaults.map(java.util.regex.Pattern.compile) }
+  }
+
+  // The guild member a relayed message announces the death of, if any
+  private def deadGuildMember(message: String): Option[String] = {
+    guildDeathPatterns.iterator.map(_.matcher(message)).collectFirst {
+      case m if m.find() && m.groupCount() >= 1 && Option(m.group(1)).exists(isGuildMember) => m.group(1)
+    }
+  }
+
+  private def isGuildMember(name: String): Boolean = Global.game.exists {
+    case handler: wowchat.game.GamePacketHandler =>
+      handler.getGuildRoster.valuesIterator.exists(_.name.equalsIgnoreCase(name))
+    case _ => false
+  }
+
   def changeStatus(gameType: ActivityType, message: String): Unit = {
     lastStatus = Some(Activity.of(gameType, message))
     jda.getPresence.setActivity(lastStatus.get)
@@ -213,34 +255,9 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
             .replace("%message", parsedResolvedTags)
             .replace("%target", wowChannel.getOrElse(""))
 
-          // Append guild death role mention if configured and message is a guild member death
+          // Death ping: mention the role when the message announces a guild member's death
           val finalMessage = guildDeathRoleId match {
-            case Some(roleId) =>
-              // Check for various death message patterns
-              val isDeathMessage = formatted.contains("has been slain by") || 
-                                   formatted.contains("has fallen at level") ||
-                                   formatted.contains("[Hardcore Death]")
-              
-              if (isDeathMessage) {
-                // Extract player name - try multiple patterns
-                val stripped = formatted.replaceFirst("^.*\\]:\\s*", "") // Remove prefix like "[SYSTEM]: "
-                val name = if (stripped.contains("[Hardcore Death]")) {
-                  // Pattern: [Hardcore Death] PlayerName has fallen...
-                  stripped.replaceFirst(".*\\[Hardcore Death\\]\\s*", "").split(" ").headOption.getOrElse("").trim
-                } else {
-                  // Pattern: PlayerName has been slain...
-                  stripped.split(" ").headOption.getOrElse("").trim
-                }
-                
-                val isGuildMember = name.nonEmpty && Global.game.exists {
-                  case handler: wowchat.game.GamePacketHandler =>
-                    handler.getGuildRoster.valuesIterator.exists(_.name.equalsIgnoreCase(name))
-                  case _ => false
-                }
-                if (isGuildMember) formatted + s" <@&$roleId>" else formatted
-              } else {
-                formatted
-              }
+            case Some(roleId) if deadGuildMember(parsedLinks).isDefined => formatted + s" <@&$roleId>"
             case _ => formatted
           }
 
