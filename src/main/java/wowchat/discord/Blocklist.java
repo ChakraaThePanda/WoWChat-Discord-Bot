@@ -294,7 +294,7 @@ public final class Blocklist {
         DataArray ignores = DataArray.empty();
         for (String n : ignored) ignores.add(DataObject.empty().put("name", n));
         CharacterStore.writeFile(FILE, DataObject.empty()
-            .put("version", 1).put("banned", bans).put("ignored", ignores).toPrettyString());
+            .put("banned", bans).put("ignored", ignores).toPrettyString());
     }
 
     private static void load(Path file) {

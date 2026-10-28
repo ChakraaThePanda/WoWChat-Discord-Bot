@@ -452,7 +452,7 @@ public final class CharacterStore {
             if (r.rankIndex >= 0) o.put("rank", DataObject.empty().put("index", r.rankIndex).put("since", r.rankSince));
             chars.put(String.valueOf(r.guid), o);
         }
-        return DataObject.empty().put("version", 1).put("characters", chars).toPrettyString();
+        return DataObject.empty().put("characters", chars).toPrettyString();
     }
 
     // Written to a temporary file first, then swapped in, so a crash can't leave half a file.
