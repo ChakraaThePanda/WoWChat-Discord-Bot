@@ -100,7 +100,7 @@ class GamePacketHandlerTBC(realmId: Int, realmName: String, sessionKey: Array[By
     }
 
     // ignore if from an unhandled channel
-    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
+    if (!isChatWanted(tp, channelName)) {
       return None
     }
 
@@ -152,7 +152,7 @@ class GamePacketHandlerTBC(realmId: Int, realmName: String, sessionKey: Array[By
       val publicNote = msg.readString
       val officerNote = msg.readString
 
-      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, publicNote = publicNote, officerNote = officerNote)
+      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, rankIndex, publicNote, officerNote, guid)
     }).toMap
   }
 

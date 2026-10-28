@@ -1,12 +1,9 @@
 package wowchat.discord;
 
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import wowchat.common.Packet;
 import wowchat.game.GamePacketHandler;
 
-import java.io.File;
 import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.List;
@@ -46,53 +43,20 @@ public final class AutoGuildInviteHandler {
 
     public static List<String> getChannels() { return channels; }
 
-    private static String getClassName(byte charClass) {
-        switch (charClass) {
-            case 0x01: return "warrior";
-            case 0x02: return "paladin";
-            case 0x03: return "hunter";
-            case 0x04: return "rogue";
-            case 0x05: return "priest";
-            case 0x06: return "death knight";
-            case 0x07: return "shaman";
-            case 0x08: return "mage";
-            case 0x09: return "warlock";
-            case 0x0A: return "monk";
-            case 0x0B: return "druid";
-            default:   return "";
-        }
-    }
-
-    private static boolean shouldBlock(String name, byte charClass, String race, GamePacketHandler handler) {
-        if (wowchat.discord.BanManager.isBanned(name)) {
-            System.out.println("[AutoGuildInvite] Ignoring invite request from " + name + ": player is banned.");
-            return true;
-        }
-        scala.collection.Seq<String> bannedClasses = wowchat.common.Global$.MODULE$.config().guildEnforcement().bannedClasses();
-        if (!bannedClasses.isEmpty()) {
-            String cls = getClassName(charClass);
-            if (!cls.isEmpty() && bannedClasses.contains(cls)) {
-                System.out.println("[AutoGuildInvite] Ignoring invite request from " + name + ": class " + cls + " is blacklisted.");
-                if (replyOnBlock) handler.sendWhisper(name, "Sorry, your class is not eligible to join this guild.");
-                return true;
-            }
-        }
-        scala.collection.Seq<String> bannedRaces = wowchat.common.Global$.MODULE$.config().guildEnforcement().bannedRaces();
-        if (!bannedRaces.isEmpty()) {
-            String normalizedRace = race.trim().toLowerCase();
-            if (!normalizedRace.isEmpty() && bannedRaces.contains(normalizedRace)) {
-                System.out.println("[AutoGuildInvite] Ignoring invite request from " + name + ": race " + race.trim() + " is blacklisted.");
-                if (replyOnBlock) handler.sendWhisper(name, "Sorry, your character's race is not eligible to join this guild.");
-                return true;
-            }
-        }
-        return false;
+    // Same rules as a player joining the guild (Blocklist.check), so nobody is invited only to be kicked
+    private static boolean shouldBlock(long guid, String name, byte charClass, String race, GamePacketHandler handler) {
+        Blocklist.Reason reason = Blocklist.check(guid, name, charClass, race);
+        if (reason == null) return false;
+        System.out.println("[AutoGuildInvite] Ignoring invite request from " + name + ": " + reason.text + ".");
+        if (replyOnBlock && reason.kind.equals("class")) handler.sendWhisper(name, "Sorry, your class is not eligible to join this guild.");
+        if (replyOnBlock && reason.kind.equals("race")) handler.sendWhisper(name, "Sorry, your character's race is not eligible to join this guild.");
+        return true;
     }
 
     public static void onNameResolved(long guid, String name, byte charClass, String race, GamePacketHandler handler) {
         if (!active) return;
         if (!pendingInvites.remove(guid, Boolean.TRUE)) return;
-        if (shouldBlock(name, charClass, race, handler)) return;
+        if (shouldBlock(guid, name, charClass, race, handler)) return;
         handler.sendGuildInvite(name);
     }
 
@@ -100,9 +64,7 @@ public final class AutoGuildInviteHandler {
         if (loaded) return;
         loaded = true;
         try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            Config config = ConfigHelper.getConfig();
 
             if (!config.hasPath("autoGuildInvite")) return;
             Config c = config.getConfig("autoGuildInvite");
@@ -156,6 +118,14 @@ public final class AutoGuildInviteHandler {
         }
     }
 
+    // A message from a GM (SMSG_GM_MESSAGECHAT) carries the sender's name after the flags:
+    // nameLength(4) + name. Same as GamePacketHandlerWotLK.parseChatMessage skips it.
+    private static void skipGmName(Packet msg, GamePacketHandler handler) {
+        if (msg.id() == handler.SMSG_MESSAGECHAT()) return;
+        msg.byteBuf().skipBytes(4);
+        msg.skipString();
+    }
+
     // WotLK CHAT_MSG_CHANNEL structure:
     // type(1) + lang(4) + senderGuid(8) + skip(4) + channelName(string) + skip(8) + txtLen(4) + txt
     public static void handleIfChannel(Packet msg, GamePacketHandler handler) {
@@ -169,6 +139,7 @@ public final class AutoGuildInviteHandler {
 
             long senderGuid = msg.byteBuf().readLongLE();
             msg.byteBuf().skipBytes(4);
+            skipGmName(msg, handler);
 
             String rawChannel = msg.readString();
             String normalizedChannel = rawChannel.toLowerCase().replaceFirst("^\\d+\\.\\s*", "");
@@ -200,7 +171,7 @@ public final class AutoGuildInviteHandler {
             }
             String playerName = playerOpt.get().name();
             String playerRace = GuildOnlineListPublisher.getRace(playerName).trim();
-            if (shouldBlock(playerName, playerOpt.get().charClass(), playerRace, handler)) return;
+            if (shouldBlock(senderGuid, playerName, playerOpt.get().charClass(), playerRace, handler)) return;
             handler.sendGuildInvite(playerName);
 
         } catch (Throwable t) {
@@ -223,6 +194,7 @@ public final class AutoGuildInviteHandler {
 
             long senderGuid = msg.byteBuf().readLongLE();
             msg.byteBuf().skipBytes(4);            // unknown
+            skipGmName(msg, handler);
             msg.byteBuf().skipBytes(8);            // guid again
 
             int txtLen = msg.byteBuf().readIntLE();
@@ -250,7 +222,7 @@ public final class AutoGuildInviteHandler {
             }
             String playerName = playerOpt.get().name();
             String playerRace = GuildOnlineListPublisher.getRace(playerName).trim();
-            if (shouldBlock(playerName, playerOpt.get().charClass(), playerRace, handler)) return;
+            if (shouldBlock(senderGuid, playerName, playerOpt.get().charClass(), playerRace, handler)) return;
             handler.sendGuildInvite(playerName);
 
         } catch (Throwable t) {

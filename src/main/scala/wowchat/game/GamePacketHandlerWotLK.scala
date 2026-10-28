@@ -149,7 +149,7 @@ class GamePacketHandlerWotLK(realmId: Int, realmName: String, sessionKey: Array[
     }
 
     // ignore if from an unhandled channel - unless it is a guild achievement message
-    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
+    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !isChatWanted(tp, channelName)) {
       return None
     }
 
@@ -213,7 +213,7 @@ class GamePacketHandlerWotLK(realmId: Int, realmName: String, sessionKey: Array[
       val lastLogoff = if (!isOnline) msg.byteBuf.readFloatLE else 0f
       val publicNote = msg.readString        // public note
       val officerNote = msg.readString       // officer note
-      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, rankIndex, publicNote, officerNote)
+      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, rankIndex, publicNote, officerNote, guid)
     }).toMap
   }
 }

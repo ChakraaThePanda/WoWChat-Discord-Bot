@@ -2,26 +2,20 @@ package wowchat.discord;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.MessageEmbed;
-import net.dv8tion.jda.api.entities.Role;
-import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import scala.Option;
 import wowchat.common.Global$;
 import wowchat.game.GameCommandHandler;
 import wowchat.game.GamePacketHandler;
 import wowchat.game.GuildMember;
-import wowchat.game.Player;
 
 import java.awt.Color;
-import java.io.File;
 import java.util.*;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
@@ -95,63 +89,22 @@ public final class GuildRosterPublisher {
         // Refresh shared cache once per tick (OPTIMIZATION)
         GuildDataCache.getInstance().refresh();
 
-        // --- Ban list enforcement: kick any banned player found in the guild roster ---
-        Collection<GuildMember> allMembers = GuildDataCache.getInstance().getMembers(false);
+        // --- Ban list, class and race rules: kick anyone in the guild who breaks them ---
+        // Joins are checked right away (Blocklist.checkNewMembers); this sweep catches the rest,
+        // like a race learned late or a name banned while already in the guild.
         Option<wowchat.game.GameCommandHandler> gameOptForKick = Global$.MODULE$.game();
         if (gameOptForKick != null && !gameOptForKick.isEmpty()
                 && gameOptForKick.get() instanceof wowchat.game.GamePacketHandler) {
-            wowchat.game.GamePacketHandler kickHandler =
-                (wowchat.game.GamePacketHandler) gameOptForKick.get();
-            scala.collection.Seq<String> bannedClasses = Global$.MODULE$.config().guildEnforcement().bannedClasses();
-            scala.collection.Seq<String> bannedRaces = Global$.MODULE$.config().guildEnforcement().bannedRaces();
-            String botCharacter = Global$.MODULE$.config().wow().character();
-            for (GuildMember member : allMembers) {
-                // Never the bot's own character
-                if (member.name().equalsIgnoreCase(botCharacter)) continue;
-                if (BanManager.isBanned(member.name())) {
-                    System.out.println("[BanList] Kicking banned player: " + member.name());
-                    kickHandler.sendGuildKick(member.name());
-                    continue;
-                }
-                String memberClass = getClassName(member.charClass()).toLowerCase();
-                if (bannedClasses.contains(memberClass)) {
-                    System.out.println("[ClassBan] Kicking " + member.name() + " (" + memberClass + "): class is blacklisted.");
-                    kickHandler.sendGuildKick(member.name());
-                    continue;
-                }
-                // Race comes from name lookups, so it's unknown for a while for some members
-                String memberRace = GuildOnlineListPublisher.getRace(member.name()).trim().toLowerCase();
-                // endsWith: Pandaren come as "Horde Pandaren" or "Alliance Pandaren"
-                boolean raceBanned = false;
-                scala.collection.Iterator<String> races = bannedRaces.iterator();
-                while (races.hasNext()) {
-                    String r = races.next();
-                    if (memberRace.equals(r) || memberRace.endsWith(" " + r)) raceBanned = true;
-                }
-                if (!memberRace.isEmpty() && raceBanned) {
-                    System.out.println("[RaceBan] Kicking " + member.name() + " (" + memberRace + "): race is blacklisted.");
-                    kickHandler.sendGuildKick(member.name());
-                }
-            }
+            Blocklist.sweep(GuildDataCache.getInstance().getMembers(false),
+                (wowchat.game.GamePacketHandler) gameOptForKick.get());
         }
-        
-        // Clean up professions of characters who left. Every member counts here, even ignored
-        // ones: they're still in the guild.
-        Collection<GuildMember> currentMembers = GuildDataCache.getInstance().getMembers(false);
-        Set<String> currentMemberNamesLower = new HashSet<>();
-        for (GuildMember m : currentMembers) {
-            currentMemberNamesLower.add(m.name().toLowerCase());
-        }
-        ProfessionManager.cleanupStaleEntries(currentMemberNamesLower);
-
-        // Update rank history for the promotionDue audit sub-module
-        GuildRankTracker.update(currentMembers);
 
         JDA jda = GuildOnlineListPublisher.getJda();
         if (jda == null) return;
 
-        Map<String, String> rosterNotes = GuildDataCache.getInstance().getOfficerNotes(true);
-        if (rosterNotes == null) return;
+        // Ignored players are left out of the roster post
+        List<String> rosterNames = new ArrayList<>();
+        for (GuildMember m : GuildDataCache.getInstance().getMembers(true)) rosterNames.add(m.name());
 
         // --- Get Discord guild for inactivity processing ---
         List<Guild> guilds = jda.getGuilds();
@@ -199,7 +152,7 @@ public final class GuildRosterPublisher {
 
             // --- Build roster embed (only if enabled) ---
             if (ConfigHelper.isRosterPanelEnabled()) {
-                postOrEditRoster(channel, discordGuild, rosterNotes, inactiveCount);
+                postOrEditRoster(channel, discordGuild, rosterNames, inactiveCount);
             }
         }
     }
@@ -224,23 +177,6 @@ public final class GuildRosterPublisher {
     // Format a single character entry: "Name (Level X Race Class)"
     // -------------------------------------------------------------------------
 
-    private static String getClassName(byte charClass) {
-        switch (charClass) {
-            case 0x01: return "Warrior";
-            case 0x02: return "Paladin";
-            case 0x03: return "Hunter";
-            case 0x04: return "Rogue";
-            case 0x05: return "Priest";
-            case 0x06: return "Death Knight";
-            case 0x07: return "Shaman";
-            case 0x08: return "Mage";
-            case 0x09: return "Warlock";
-            case 0x0A: return "Monk";
-            case 0x0B: return "Druid";
-            default:   return "Unknown";
-        }
-    }
-
     private static String formatCharEntry(String charName, scala.collection.Map<Object, GuildMember> roster) {
         GuildMember m = GuildDataCache.getInstance().getMember(charName);
         if (m == null) {
@@ -248,7 +184,7 @@ public final class GuildRosterPublisher {
         }
         
         String race = GuildOnlineListPublisher.getRace(charName);
-        String cls = getClassName(m.charClass());
+        String cls = GameData.className(m.charClass());
         int level = m.level() & 0xFF; // byte to unsigned int
         String attrs = "Level " + level
             + (race.isEmpty() ? "" : " " + race.trim())
@@ -265,7 +201,7 @@ public final class GuildRosterPublisher {
     // Guild Roster embed
     // -------------------------------------------------------------------------
 
-    private static void postOrEditRoster(TextChannel channel, Guild discordGuild, Map<String, String> rosterNotes, int inactiveCount) {
+    private static void postOrEditRoster(TextChannel channel, Guild discordGuild, List<String> rosterNames, int inactiveCount) {
         // Get full roster for attribute lookup
         scala.collection.Map<Object, GuildMember> finalRoster = null;
         try {
@@ -280,19 +216,19 @@ public final class GuildRosterPublisher {
         List<String> blocks = new ArrayList<>();
 
         // Sort all characters alphabetically
-        List<String> sortedChars = new ArrayList<>(rosterNotes.keySet());
+        List<String> sortedChars = new ArrayList<>(rosterNames);
         Collections.sort(sortedChars, String.CASE_INSENSITIVE_ORDER);
 
         // Group by Discord ID, preserving alphabetical order within each group
         Map<String, List<String>> byDiscordId = new LinkedHashMap<>();
         List<String> unlinked = new ArrayList<>();
 
-        // Collect all Discord IDs that appear in notes first
+        // Each character's linked Discord account
         Map<String, String> discordIdByChar = new LinkedHashMap<>();
         for (String charName : sortedChars) {
             if (ignoreLower.contains(charName.toLowerCase(Locale.ROOT))) continue;
             GuildMember member = GuildDataCache.getInstance().getMember(charName);
-            String discordId = DiscordIdExtractor.extractDiscordId(member);
+            String discordId = CharacterStore.discordIdOf(member);
             if (discordId != null) discordIdByChar.put(charName, discordId);
         }
 
@@ -478,9 +414,7 @@ public final class GuildRosterPublisher {
 
     private static void loadConfig() {
         try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            Config config = ConfigHelper.getConfig();
 
             updateMinutes = 5;
             try {

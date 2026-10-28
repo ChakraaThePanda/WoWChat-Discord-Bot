@@ -2,12 +2,18 @@ package wowchat;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
@@ -26,7 +32,12 @@ import java.util.List;
  * The watchdog only intervenes when the bot is truly stuck or silently broken.
  *
  * Built automatically by mvn package alongside wowchat.jar.
- * Run (from the bot folder): java -jar lib/watchdog.jar lib/wowchat.jar wowchat.conf
+ * Run (from the bot folder): java -jar lib/watchdog.jar [--log data/bot.log] lib/wowchat.jar wowchat.conf
+ *
+ * With --log, everything the bot and the watchdog print goes to that file. Past 5 MB it's
+ * copied to bot.old.log (replacing the previous one) and emptied, so the log never takes more
+ * than about 10 MB. Copied and emptied rather than renamed: Windows won't rename a file while
+ * the tray's log window has it open.
  */
 public final class WatchdogMain {
 
@@ -40,17 +51,25 @@ public final class WatchdogMain {
     private static final int    CHECK_INTERVAL_MS       = 10000;
     private static final int    SETUP_ERROR_EXIT_CODE   = 2;    // WoWChat.SETUP_ERROR_EXIT_CODE
 
+    private static final long   LOG_MAX_BYTES           = 5L * 1024 * 1024;
+
     private static final SimpleDateFormat timestampFormat = new SimpleDateFormat("HH:mm:ss.SSS");
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.err.println("[Watchdog] Usage: java -jar watchdog.jar wowchat.jar [wowchat.conf]");
+        List<String> rest = new ArrayList<>(Arrays.asList(args));
+        if (rest.size() >= 2 && rest.get(0).equals("--log")) {
+            PrintStream log = new PrintStream(new RollingLog(new File(rest.get(1)), LOG_MAX_BYTES), true, "UTF-8");
+            System.setOut(log);
+            System.setErr(log);
+            rest = rest.subList(2, rest.size());
+        }
+        if (rest.isEmpty()) {
+            System.err.println("[Watchdog] Usage: java -jar watchdog.jar [--log data/bot.log] wowchat.jar [wowchat.conf]");
             System.exit(1);
         }
 
-        String jarFile   = args[0];
-        String[] botArgs = new String[args.length - 1];
-        System.arraycopy(args, 1, botArgs, 0, botArgs.length);
+        String jarFile   = rest.get(0);
+        String[] botArgs = rest.subList(1, rest.size()).toArray(new String[0]);
 
         System.out.println("[Watchdog] Starting. Managing: " + jarFile);
 
@@ -171,6 +190,55 @@ public final class WatchdogMain {
         return new ProcessBuilder(cmd)
             .directory(new File("."))
             .start();
+    }
+
+    // A log file that starts over past maxBytes, keeping the previous part as <name>.old.log
+    private static final class RollingLog extends OutputStream {
+        private final File file;
+        private final File old;
+        private final long maxBytes;
+        private FileOutputStream out;
+        private long size;
+
+        RollingLog(File file, long maxBytes) throws IOException {
+            File dir = file.getAbsoluteFile().getParentFile();
+            if (dir != null) dir.mkdirs();
+            String name = file.getName();
+            String base = name.endsWith(".log") ? name.substring(0, name.length() - 4) : name;
+            this.file = file;
+            this.old = new File(dir, base + ".old.log");
+            this.maxBytes = maxBytes;
+            this.out = new FileOutputStream(file, true);
+            this.size = file.length();
+        }
+
+        @Override
+        public synchronized void write(int b) throws IOException {
+            write(new byte[]{ (byte) b }, 0, 1);
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) throws IOException {
+            out.write(b, off, len);
+            size += len;
+            if (size > maxBytes) roll();
+        }
+
+        @Override
+        public synchronized void flush() throws IOException {
+            out.flush();
+        }
+
+        private void roll() throws IOException {
+            out.close();
+            try {
+                Files.copy(file.toPath(), old.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException ignored) {
+                // The old part couldn't be kept (file in use): start over anyway
+            }
+            out = new FileOutputStream(file, false);
+            size = 0;
+        }
     }
 
     private static void pump(final InputStream in, final boolean isErr) {

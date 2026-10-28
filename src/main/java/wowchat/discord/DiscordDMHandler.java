@@ -1,20 +1,17 @@
 package wowchat.discord;
 
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import wowchat.common.Global$;
 
-import java.io.File;
 
 /**
  * Handles Discord DM auto-reply.
  * Reads dmAutoReply from wowchat.conf and replies to any DM the bot receives.
- * Registered onto the JDA instance at bot startup via GuildOnlineListPublisher.
+ * Registered onto the JDA instance at bot startup (init, called from WoWChat).
  */
 public class DiscordDMHandler extends ListenerAdapter {
 
@@ -43,19 +40,16 @@ public class DiscordDMHandler extends ListenerAdapter {
      * Called from WoWChat.main() during startup.
      */
     public static void init() {
-        String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-        register(configFile);
+        register();
     }
 
     /**
      * Loads the dmAutoReply config and registers this listener on the JDA instance.
      * Called once from init() during initialization.
      */
-    public static void register(String configFile) {
+    private static void register() {
         try {
-            // Use allowUnresolved so missing env vars (${?VAR}) don't cause failures
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            Config config = ConfigHelper.getConfig();
 
             // Check if DM auto-reply is enabled (NEW path with fallback to OLD)
             boolean enabled = true; // Default enabled for backward compat

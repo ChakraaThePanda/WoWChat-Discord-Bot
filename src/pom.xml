@@ -160,7 +160,8 @@
                         <configuration>
                             <classifier>watchdog</classifier>
                             <includes>
-                                <include>wowchat/WatchdogMain.class</include>
+                                <!-- With its nested classes (WatchdogMain$RollingLog) -->
+                                <include>wowchat/WatchdogMain*.class</include>
                             </includes>
                             <archive>
                                 <manifest>

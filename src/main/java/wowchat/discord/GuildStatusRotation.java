@@ -2,12 +2,9 @@ package wowchat.discord;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import net.dv8tion.jda.api.JDA;
 import wowchat.common.Global$;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -63,9 +60,7 @@ public class GuildStatusRotation {
 
     private static void loadConfig() {
         try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            Config config = ConfigHelper.getConfig();
 
             // Check if status rotation is enabled
             boolean enabled = true; // Default enabled for backward compat

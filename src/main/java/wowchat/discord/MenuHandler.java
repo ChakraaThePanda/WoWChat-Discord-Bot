@@ -8,6 +8,7 @@ import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.EntitySelectInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.interactions.callbacks.IReplyCallback;
 import net.dv8tion.jda.api.interactions.InteractionContextType;
@@ -15,6 +16,7 @@ import net.dv8tion.jda.api.interactions.callbacks.IMessageEditCallback;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.components.ActionRow;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
+import net.dv8tion.jda.api.interactions.components.selections.EntitySelectMenu;
 import net.dv8tion.jda.api.interactions.components.selections.StringSelectMenu;
 import net.dv8tion.jda.api.interactions.components.text.TextInput;
 import net.dv8tion.jda.api.interactions.components.text.TextInputStyle;
@@ -60,8 +62,6 @@ public final class MenuHandler {
     private static final String NOT_CONNECTED =
         "❌ The bot isn't connected to the WoW server right now. Try again in a minute.";
 
-    // Pseudo-option in character pickers that lets an admin type any guild member's name
-    private static final String OTHER = "__other";
     private static final int PAGE_SIZE = 25; // Discord's per-select option cap
     private static final int WHO_TIMEOUT_SECONDS = 10;
 
@@ -117,15 +117,29 @@ public final class MenuHandler {
             if (id.equals("menu:back"))   { show(event, null, mainScreen(event)); return; }
             if (id.equals("menu:online")) { show(event, null, onlineScreen()); return; }
             if (id.equals("menu:post"))   { postToChannel(event); return; }
+
+            // Look Up: a player, or crafters for a profession
+            if (id.equals("menu:lookup")) { show(event, null, lookUpScreen()); return; }
             if (id.equals("menu:who"))    { event.replyModal(nameModal("modal:who", "Look Up Player")).queue(); return; }
 
-            if (id.equals("menu:prof"))        { show(event, null, professionsScreen(event)); return; }
-            if (id.equals("menu:prof:add"))    { show(event, null, pickCharacterScreen(event, "menu:prof:addchar", "Add / Update Profession", "Which character is the profession for?")); return; }
-            if (id.equals("menu:prof:remove")) { show(event, null, removeProfessionScreen(event, null)); return; }
-            if (id.equals("menu:prof:find"))   { show(event, null, findCraftersPickScreen()); return; }
+            // My Characters: your links and their professions
+            if (id.equals("menu:chars"))         { show(event, null, charactersScreen(event)); return; }
+            if (id.equals("menu:chars:claim"))   { event.replyModal(nameModal("modal:chars:claim", "Claim a Character")).queue(); return; }
+            if (id.equals("menu:chars:unclaim")) { show(event, null, unclaimPickScreen(event)); return; }
+            if (id.startsWith("menu:chars:unclaimdo:")) {
+                long guid = Long.parseLong(id.substring("menu:chars:unclaimdo:".length()));
+                show(event, unclaim(event, guid), charactersScreen(event));
+                return;
+            }
+            if (id.equals("menu:prof:add"))    { show(event, null, pickCharacterScreen(event)); return; }
+            if (id.equals("menu:prof:remove")) { show(event, null, removeProfessionScreen(event, null, false)); return; }
 
-            if (id.equals("menu:admin")) { show(event, null, adminScreen()); return; }
-            if (id.equals("menu:admin:lists")) { show(event, null, listsScreen()); return; }
+            // Admin Actions and its sections
+            if (id.equals("menu:admin"))        { show(event, null, adminScreen()); return; }
+            if (id.equals("menu:admin:ranks"))  { show(event, null, ranksScreen()); return; }
+            if (id.equals("menu:admin:blocks")) { show(event, null, blocksScreen()); return; }
+            if (id.equals("menu:admin:chars"))  { show(event, null, adminCharactersScreen()); return; }
+            if (id.equals("menu:admin:lists"))  { show(event, null, listsScreen()); return; }
             if (id.startsWith("menu:admin:ask:")) {
                 String action = id.substring("menu:admin:ask:".length());
                 event.replyModal(nameModal("modal:admin:" + action, ADMIN_TITLES.get(action))).queue();
@@ -134,15 +148,35 @@ public final class MenuHandler {
             if (id.startsWith("menu:admin:do:")) {
                 // menu:admin:do:<action>:<name>
                 String[] parts = id.substring("menu:admin:do:".length()).split(":", 2);
-                show(event, runAdminAction(parts[0], parts[1]), adminScreen());
+                show(event, runAdminAction(parts[0], parts[1]), sectionScreen(parts[0]));
                 return;
             }
             if (id.startsWith("menu:admin:list:")) {
                 // menu:admin:list:<unban|unignore>:<page>
                 String[] parts = id.substring("menu:admin:list:".length()).split(":");
                 Screen s = removeFromListScreen(parts[0], Integer.parseInt(parts[1]));
-                show(event, s == null ? emptyListMessage(parts[0]) : null, s == null ? adminScreen() : s);
+                show(event, s == null ? emptyListMessage(parts[0]) : null, s == null ? blocksScreen() : s);
+                return;
             }
+            if (id.equals("menu:admin:chars:give"))   { event.replyModal(nameModal("modal:admin:chars:give", "Give to Member")).queue(); return; }
+            if (id.equals("menu:admin:chars:remove")) { event.replyModal(nameModal("modal:admin:chars:remove", "Remove Link")).queue(); return; }
+            if (id.equals("menu:admin:chars:member")) { show(event, null, memberPickScreen()); return; }
+            if (id.startsWith("menu:admin:chars:givedo:")) {
+                // menu:admin:chars:givedo:<guid>:<discord user id>
+                String[] parts = id.substring("menu:admin:chars:givedo:".length()).split(":");
+                show(event, giveCharacter(event, Long.parseLong(parts[0]), parts[1]), adminCharactersScreen());
+                return;
+            }
+            if (id.startsWith("menu:admin:chars:removedo:")) {
+                long guid = Long.parseLong(id.substring("menu:admin:chars:removedo:".length()));
+                show(event, removeLink(event, guid), adminCharactersScreen());
+                return;
+            }
+            if (id.equals("menu:admin:prof:add"))    { event.replyModal(nameModal("modal:admin:prof:addchar", "Add / Update Profession")).queue(); return; }
+            if (id.equals("menu:admin:prof:remove")) { event.replyModal(nameModal("modal:admin:prof:removechar", "Remove Profession")).queue(); return; }
+
+            // A button from an older menu: start over from the main menu
+            show(event, null, mainScreen(event));
         } catch (Throwable t) {
             fail(event, t);
         }
@@ -158,41 +192,65 @@ public final class MenuHandler {
             }
             String value = event.getValues().get(0);
 
-            if (id.equals("menu:prof:addchar")) {
-                if (value.equals(OTHER)) {
-                    if (!isAdmin(event)) { event.reply(NO_PERMISSION).setEphemeral(true).queue(); return; }
-                    event.replyModal(nameModal("modal:prof:addchar", "Add / Update Profession")).queue();
-                } else {
-                    show(event, null, pickProfessionScreen(value));
-                }
-                return;
-            }
-            if (id.startsWith("menu:prof:addprof:")) {
-                String character = id.substring("menu:prof:addprof:".length());
-                event.replyModal(skillModal(character, value)).queue();
-                return;
-            }
-            if (id.equals("menu:prof:removesel")) {
-                if (value.equals(OTHER)) {
-                    if (!isAdmin(event)) { event.reply(NO_PERMISSION).setEphemeral(true).queue(); return; }
-                    event.replyModal(nameModal("modal:prof:removechar", "Remove Profession")).queue();
-                    return;
-                }
-                // value is <character>:<profession>
-                String[] parts = value.split(":", 2);
-                String error = ProfessionManager.remove(parts[0], parts[1], event.getUser().getId(), event.getGuild());
-                String result = error == null ? "✅ Removed **" + parts[1] + "** from **" + parts[0] + "**." : "❌ " + error;
-                show(event, result, professionsScreen(event));
+            if (id.equals("menu:chars:unclaimsel")) {
+                show(event, null, unclaimConfirmScreen(event, Long.parseLong(value)));
                 return;
             }
             if (id.equals("menu:prof:findsel")) {
                 show(event, null, findCraftersScreen(value));
                 return;
             }
+
+            // Profession screens are shared: "menu:admin:prof:..." is the admin's copy, for any character
+            boolean admin = id.startsWith("menu:admin:prof:");
+            String pid = admin ? "menu:prof:" + id.substring("menu:admin:prof:".length()) : id;
+
+            if (pid.equals("menu:prof:addchar")) {
+                show(event, null, pickProfessionScreen(value, false));
+                return;
+            }
+            if (pid.startsWith("menu:prof:addprof:")) {
+                String character = pid.substring("menu:prof:addprof:".length());
+                event.replyModal(skillModal(character, value, admin)).queue();
+                return;
+            }
+            if (pid.equals("menu:prof:removesel")) {
+                // value is <character>:<profession>
+                String[] parts = value.split(":", 2);
+                String error = ProfessionManager.remove(parts[0], parts[1], event.getUser().getId(), event.getGuild());
+                String result = error == null ? "✅ Removed **" + parts[1] + "** from **" + parts[0] + "**." : "❌ " + error;
+                show(event, result, admin ? adminCharactersScreen() : charactersScreen(event));
+                return;
+            }
             if (id.startsWith("menu:admin:pick:")) {
                 // menu:admin:pick:<unban|unignore>
                 String action = id.substring("menu:admin:pick:".length());
-                show(event, runAdminAction(action, value), adminScreen());
+                show(event, runAdminAction(action, value), blocksScreen());
+            }
+        } catch (Throwable t) {
+            fail(event, t);
+        }
+    }
+
+    // Discord member pickers: admins choosing who gets a character, or whose characters to see
+    public static void handleEntitySelect(EntitySelectInteractionEvent event) {
+        String id = event.getComponentId();
+        if (!id.startsWith("menu:")) return;
+        try {
+            if (id.startsWith("menu:admin") && !isAdmin(event)) {
+                event.reply(NO_PERMISSION).setEphemeral(true).queue();
+                return;
+            }
+            if (event.getMentions().getUsers().isEmpty()) return;
+            String userId = event.getMentions().getUsers().get(0).getId();
+
+            if (id.startsWith("menu:admin:chars:giveto:")) {
+                long guid = Long.parseLong(id.substring("menu:admin:chars:giveto:".length()));
+                show(event, null, giveConfirmScreen(guid, userId));
+                return;
+            }
+            if (id.equals("menu:admin:chars:membersel")) {
+                show(event, null, memberCharactersScreen(userId));
             }
         } catch (Throwable t) {
             fail(event, t);
@@ -208,22 +266,44 @@ public final class MenuHandler {
                 return;
             }
 
+            if (id.equals("modal:chars:claim")) {
+                startClaim(event, capitalize(value(event, "name")));
+                return;
+            }
+            if (id.equals("modal:admin:chars:give")) {
+                show(event, null, givePickScreen(capitalize(value(event, "name"))));
+                return;
+            }
+            if (id.equals("modal:admin:chars:remove")) {
+                show(event, null, removeLinkConfirmScreen(capitalize(value(event, "name"))));
+                return;
+            }
+
             if (id.equals("modal:who")) {
                 lookUpPlayer(event, capitalize(value(event, "name")));
                 return;
             }
-            if (id.equals("modal:prof:addchar")) {
-                show(event, null, pickProfessionScreen(capitalize(value(event, "name"))));
+            // Admin: professions of any guild character, by name
+            if (id.equals("modal:admin:prof:addchar")) {
+                String name = capitalize(value(event, "name"));
+                if (GuildDataCache.findMember(name) == null) {
+                    show(event, "❌ **" + name + "** isn't in the guild.", adminCharactersScreen());
+                } else {
+                    show(event, null, pickProfessionScreen(name, true));
+                }
                 return;
             }
-            if (id.equals("modal:prof:removechar")) {
-                show(event, null, removeProfessionScreen(event, capitalize(value(event, "name"))));
+            if (id.equals("modal:admin:prof:removechar")) {
+                show(event, null, removeProfessionScreen(event, capitalize(value(event, "name")), true));
                 return;
             }
-            if (id.startsWith("modal:prof:skill:")) {
-                // modal:prof:skill:<character>:<profession>
-                String[] parts = id.substring("modal:prof:skill:".length()).split(":", 2);
-                show(event, addProfession(event, parts[0], parts[1], value(event, "skill")), professionsScreen(event));
+            if (id.startsWith("modal:prof:skill:") || id.startsWith("modal:admin:prof:skill:")) {
+                // modal:[admin:]prof:skill:<character>:<profession>
+                boolean admin = id.startsWith("modal:admin:");
+                String rest = id.substring(id.indexOf("prof:skill:") + "prof:skill:".length());
+                String[] parts = rest.split(":", 2);
+                show(event, addProfession(event, parts[0], parts[1], value(event, "skill")),
+                    admin ? adminCharactersScreen() : charactersScreen(event));
                 return;
             }
             if (id.startsWith("modal:admin:")) {
@@ -231,7 +311,7 @@ public final class MenuHandler {
                 String name = capitalize(value(event, "name"));
                 String problem = validateAdminAction(action, name);
                 if (problem != null) {
-                    show(event, problem, adminScreen());
+                    show(event, problem, sectionScreen(action));
                 } else {
                     show(event, null, confirmScreen(action, name));
                 }
@@ -255,22 +335,27 @@ public final class MenuHandler {
             if (info != null) lines.add("Guild: **" + info.name() + "**");
             lines.add("Online: **" + GuildOnlineListPublisher.getOnlineNames().size() + "** guild members");
         }
-        List<String> mine = linkedCharacters(event.getUser().getId());
+        List<String> mine = new ArrayList<>();
+        for (CharacterStore.Record r : CharacterStore.linkedTo(event.getUser().getId())) mine.add(r.name);
         if (mine.isEmpty()) {
             lines.add("Your Characters: ❌ **None Linked**");
             lines.add("");
-            lines.add("Use `/help` to see how to link your characters.");
+            lines.add("Use **My Characters** to link one.");
         } else {
             lines.add("Your Characters: **" + String.join("**, **", mine) + "**");
         }
 
-        List<Button> buttons = new ArrayList<>();
-        buttons.add(Button.success("menu:online", "Who's Online"));
-        buttons.add(Button.primary("menu:who", "Look Up Player"));
-        buttons.add(Button.primary("menu:prof", "Professions"));
-        if (isAdmin(event)) buttons.add(Button.primary("menu:admin", "Admin Actions"));
+        // Quick lookups, then your own setup (green while nothing is linked), then admin tools
+        List<ActionRow> rows = new ArrayList<>();
+        rows.add(ActionRow.of(
+            Button.success("menu:online", "Who's Online"),
+            Button.primary("menu:lookup", "Look Up")));
+        rows.add(ActionRow.of(mine.isEmpty()
+            ? Button.success("menu:chars", "My Characters")
+            : Button.primary("menu:chars", "My Characters")));
+        if (isAdmin(event)) rows.add(ActionRow.of(Button.secondary("menu:admin", "Admin Actions")));
 
-        return new Screen(embed("WoWChat Menu", String.join("\n", lines)), rows(buttons));
+        return new Screen(embed("WoWChat Menu", String.join("\n", lines)), rows);
     }
 
     // -------------------------------------------------------------------------
@@ -300,22 +385,33 @@ public final class MenuHandler {
         return new Screen(list, postAndBackRow("menu:back"));
     }
 
+    // Look Up: the crafters dropdown, then the player button under it
+    private static Screen lookUpScreen() {
+        StringSelectMenu.Builder select = StringSelectMenu.create("menu:prof:findsel").setPlaceholder("Find crafters: choose a profession");
+        for (String p : ProfessionManager.validProfessions()) select.addOption(p, p);
+        return new Screen(embed("Look Up", "Find guild members who can craft for you, or look up a player."),
+            Arrays.asList(
+                ActionRow.of(select.build()),
+                ActionRow.of(Button.primary("menu:who", "Look Up Player")),
+                backRow()));
+    }
+
     private static void lookUpPlayer(ModalInteractionEvent event, String name) {
         GamePacketHandler game = game();
         if (game == null) {
-            show(event, null, new Screen(embed("Look Up Player", NOT_CONNECTED), backOnly()));
+            show(event, null, new Screen(embed("Look Up Player", NOT_CONNECTED), Collections.singletonList(backRow("menu:lookup"))));
             return;
         }
 
         event.deferEdit().queue();
         event.getHook().editOriginal(editData(null, new Screen(
-            embed("Look Up Player", "🔎 Looking up **" + name + "**…"), backOnly()))).queue();
+            embed("Look Up Player", "🔎 Looking up **" + name + "**…"), Collections.singletonList(backRow("menu:lookup"))))).queue();
 
         // The game answers later through GamePacketHandler.handle_SMSG_WHO, which calls reply
         AtomicBoolean answered = new AtomicBoolean(false);
         List<ActionRow> resultRows = Arrays.asList(
             ActionRow.of(postButton(), Button.primary("menu:who", "Look Up Another")),
-            backRow());
+            backRow("menu:lookup"));
         Consumer<String> reply = result -> {
             if (!answered.compareAndSet(false, true)) return;
             event.getHook().editOriginal(editData(null, new Screen(embed("Look Up Player", result), resultRows))).queue();
@@ -333,10 +429,10 @@ public final class MenuHandler {
         StringBuilder sb = new StringBuilder();
         sb.append("Ignored players' messages aren't relayed to Discord. ")
           .append("Banned players are also kicked from the guild automatically.\n\n");
-        appendNameList(sb, "Ignored", scala.collection.JavaConverters.seqAsJavaList(IgnoreManager.getIgnoredPlayers()));
+        appendNameList(sb, "Ignored", Blocklist.ignoredNames());
         sb.append("\n");
-        appendNameList(sb, "Banned", BanManager.getBannedPlayers());
-        return new Screen(embed("Ignore & Ban Lists", sb.toString()), postAndBackRow("menu:admin"));
+        appendNameList(sb, "Banned", Blocklist.bannedNames());
+        return new Screen(embed("Ignore & Ban Lists", sb.toString()), postAndBackRow("menu:admin:blocks"));
     }
 
     private static void appendNameList(StringBuilder sb, String title, List<String> names) {
@@ -346,56 +442,219 @@ public final class MenuHandler {
     }
 
     // -------------------------------------------------------------------------
-    // Professions
+    // My Characters: claim (link) and unclaim, and their professions
     // -------------------------------------------------------------------------
 
-    private static Screen professionsScreen(IReplyCallback event) {
-        List<String> mine = linkedCharacters(event.getUser().getId());
-        boolean admin = isAdmin(event);
-        boolean anyProfession = false;
+    private static final String THIS_SERVER_ONLY =
+        "Links only count in this Discord server. Other servers running this bot keep their own.";
 
+    private static Screen charactersScreen(IReplyCallback event) {
+        return charactersScreen(event.getUser().getId());
+    }
+
+    private static Screen charactersScreen(String userId) {
+        List<CharacterStore.Record> mine = CharacterStore.linkedTo(userId);
+        boolean inGuild = false, anyProfession = false;
         StringBuilder sb = new StringBuilder();
         if (mine.isEmpty()) {
-            sb.append("You have no linked characters yet. Use `/help` to see how to link them.\n");
+            sb.append("You have no linked characters yet. Press **Claim** to link one.\n");
         } else {
-            for (String c : mine) {
-                List<String> profs = ProfessionManager.getProfessions(c);
+            for (CharacterStore.Record r : mine) {
+                sb.append("- ").append(describe(r)).append("\n");
+                if (findMemberByGuid(r.guid) == null) continue;
+                inGuild = true;
+                List<String> profs = CharacterStore.professions(r.guid);
                 anyProfession |= !profs.isEmpty();
-                sb.append("**").append(c).append("**: ").append(profs.isEmpty() ? "No professions yet" : formatAll(profs)).append("\n");
+                sb.append("  ").append(profs.isEmpty() ? "No professions yet" : formatAll(profs)).append("\n");
             }
         }
-        sb.append("\nEach character can have up to ").append(ProfessionManager.MAX_PROFESSIONS)
-          .append(" professions. They show in the guild roster, and in **Find Crafters**.");
+        sb.append("\nCharacters in the guild can have up to ").append(ProfessionManager.MAX_PROFESSIONS)
+          .append(" professions. They show in the guild roster and in **Look Up**.\n")
+          .append(THIS_SERVER_ONLY);
 
-        List<ActionRow> rows = new ArrayList<>();
-        rows.add(ActionRow.of(
-            Button.success("menu:prof:add", "Add / Update").withDisabled(mine.isEmpty() && !admin),
-            Button.danger("menu:prof:remove", "Remove").withDisabled(!anyProfession && !admin),
-            Button.primary("menu:prof:find", "Find Crafters")));
-        rows.add(backRow());
-        return new Screen(embed("Professions", sb.toString()), rows);
+        List<ActionRow> rows = Arrays.asList(
+            ActionRow.of(
+                Button.success("menu:chars:claim", "Claim").withDisabled(game() == null),
+                Button.danger("menu:chars:unclaim", "Unclaim").withDisabled(mine.isEmpty())),
+            ActionRow.of(
+                Button.primary("menu:prof:add", "Add / Update Profession").withDisabled(!inGuild),
+                Button.danger("menu:prof:remove", "Remove Profession").withDisabled(!anyProfession)),
+            backRow());
+        String title = "My Characters" + (mine.isEmpty() ? "" : " (" + mine.size() + ")");
+        String footer = game() == null ? "\n\n" + NOT_CONNECTED : "";
+        return new Screen(embed(title, sb + footer), rows);
     }
 
-    private static Screen pickCharacterScreen(IReplyCallback event, String selectId, String title, String prompt) {
-        StringSelectMenu.Builder select = StringSelectMenu.create(selectId).setPlaceholder("Choose a character");
-        for (String c : limit(linkedCharacters(event.getUser().getId()), isAdmin(event) ? PAGE_SIZE - 1 : PAGE_SIZE)) {
-            select.addOption(c, c);
+    // "**Arthas**: Level 80 Death Knight, Officer" for guild members, "**Bob**: not in the guild" otherwise
+    private static String describe(CharacterStore.Record r) {
+        GuildMember m = findMemberByGuid(r.guid);
+        if (m == null) return "**" + r.name + "**: not in the guild";
+        String rank = rankName(game() == null ? null : game().getGuildInfo(), m.rankIndex());
+        return "**" + m.name() + "**: Level " + (m.level() & 0xFF) + " " + GameData.className(m.charClass())
+            + (rank != null ? ", " + rank : "");
+    }
+
+    private static void startClaim(ModalInteractionEvent event, String character) {
+        String userId = event.getUser().getId();
+        if (game() == null) {
+            show(event, NOT_CONNECTED, charactersScreen(userId));
+            return;
         }
-        if (isAdmin(event)) select.addOption("Another character…", OTHER, "Type any guild member's name (admin)");
-        return new Screen(embed(title, prompt), Arrays.asList(ActionRow.of(select.build()), backRow("menu:prof")));
+        // Later updates (code received, linked, expired) replace this message
+        Consumer<String> status = msg ->
+            event.getHook().editOriginal(editData(msg, charactersScreen(userId))).queue(ok -> {}, err -> {});
+        String serverName = event.getGuild() != null ? event.getGuild().getName() : "this Discord server";
+        CharacterClaims.Start start = CharacterClaims.start(userId, event.getUser().getName(), serverName, character, status);
+        if (start.problem != null) {
+            show(event, start.problem, charactersScreen(userId));
+            return;
+        }
+        String bot = Blocklist.botCharacter();
+        String steps = String.join("\n",
+            "1. Log in to **" + character + "** in WoW.",
+            "2. Whisper this to the bot: `/w " + bot + " " + start.code + "`",
+            "3. The bot whispers back with your Discord name. Whisper `yes` to confirm.",
+            "",
+            "The code works for 10 minutes. This message updates when it's done.",
+            "Wrong name, or the code expired? Press **New Code**.",
+            "",
+            THIS_SERVER_ONLY);
+        show(event, null, new Screen(embed("Claim " + character, steps), Arrays.asList(
+            ActionRow.of(Button.primary("menu:chars:claim", "New Code")),
+            backRow("menu:chars"))));
     }
 
-    private static Screen pickProfessionScreen(String character) {
+    private static Screen unclaimPickScreen(IReplyCallback event) {
+        List<CharacterStore.Record> mine = CharacterStore.linkedTo(event.getUser().getId());
+        if (mine.isEmpty()) return charactersScreen(event);
+        StringSelectMenu.Builder select = StringSelectMenu.create("menu:chars:unclaimsel").setPlaceholder("Choose a character");
+        for (CharacterStore.Record r : limit(mine, PAGE_SIZE)) select.addOption(r.name, String.valueOf(r.guid));
+        return new Screen(embed("Unclaim", "Which character do you want to unlink from your Discord account?"),
+            Arrays.asList(ActionRow.of(select.build()), backRow("menu:chars")));
+    }
+
+    private static Screen unclaimConfirmScreen(IReplyCallback event, long guid) {
+        CharacterStore.Record r = CharacterStore.get(guid);
+        if (r == null || !event.getUser().getId().equals(r.discordId)) return charactersScreen(event);
+        return new Screen(embed("Unclaim", "Unlink **" + r.name + "** from your Discord account? You can claim it again later."),
+            Collections.singletonList(ActionRow.of(
+                Button.danger("menu:chars:unclaimdo:" + guid, "Yes, unclaim"),
+                Button.secondary("menu:chars", "Cancel"))));
+    }
+
+    private static String unclaim(IReplyCallback event, long guid) {
+        CharacterStore.Record r = CharacterStore.get(guid);
+        String userId = event.getUser().getId();
+        if (r == null || !userId.equals(r.discordId)) return "ℹ️ That character isn't linked to you.";
+        CharacterStore.unlink(guid, "self:" + userId);
+        return "✅ **" + r.name + "** is no longer linked to your Discord account.";
+    }
+
+    // Admin: Give to Member. Only guild members, so every link has the character's GUID.
+    private static Screen givePickScreen(String name) {
+        if (game() == null) return charactersAdminResult(NOT_CONNECTED);
+        GuildMember m = GuildDataCache.findMember(name);
+        if (m == null) {
+            return charactersAdminResult("❌ **" + name + "** isn't in the guild. Only guild members can be given. "
+                + "The player can claim it from /menu → **My Characters**.");
+        }
+        String owner = CharacterStore.discordIdOf(m);
+        String text = "Who should **" + m.name() + "** be linked to?"
+            + (owner != null ? "\nIt's linked to <@" + owner + "> now." : "");
+        EntitySelectMenu select = EntitySelectMenu.create("menu:admin:chars:giveto:" + m.guid(), EntitySelectMenu.SelectTarget.USER)
+            .setPlaceholder("Choose a Discord member").build();
+        return new Screen(embed("Give to Member", text), Arrays.asList(ActionRow.of(select), backRow("menu:admin:chars")));
+    }
+
+    private static Screen giveConfirmScreen(long guid, String userId) {
+        GuildMember m = findMemberByGuid(guid);
+        if (m == null) return charactersAdminResult("❌ That character isn't in the guild anymore.");
+        return new Screen(embed("Give to Member", "Link **" + m.name() + "** to <@" + userId + ">?"),
+            Collections.singletonList(ActionRow.of(
+                Button.success("menu:admin:chars:givedo:" + guid + ":" + userId, "Yes, give"),
+                Button.secondary("menu:admin:chars", "Cancel"))));
+    }
+
+    private static String giveCharacter(IReplyCallback event, long guid, String userId) {
+        GuildMember m = findMemberByGuid(guid);
+        if (m == null) return "❌ That character isn't in the guild anymore.";
+        CharacterStore.setLink(guid, m.name(), userId, "admin:" + event.getUser().getId());
+        return "✅ **" + m.name() + "** is now linked to <@" + userId + ">.";
+    }
+
+    // Admin: Remove Link. Any link, in the guild or not.
+    private static Screen removeLinkConfirmScreen(String name) {
+        GuildMember m = GuildDataCache.findMember(name);
+        CharacterStore.Record r = m != null ? CharacterStore.get(m.guid()) : CharacterStore.byName(name);
+        if (r == null || !r.isLinked()) return charactersAdminResult("ℹ️ **" + name + "** isn't linked to anyone.");
+        return new Screen(embed("Remove Link", "Remove the link between **" + r.name + "** and <@" + r.discordId + ">?"),
+            Collections.singletonList(ActionRow.of(
+                Button.danger("menu:admin:chars:removedo:" + r.guid, "Yes, remove"),
+                Button.secondary("menu:admin:chars", "Cancel"))));
+    }
+
+    private static String removeLink(IReplyCallback event, long guid) {
+        CharacterStore.Record r = CharacterStore.get(guid);
+        if (r == null || !CharacterStore.unlink(guid, "admin:" + event.getUser().getId())) {
+            return "ℹ️ That character isn't linked to anyone.";
+        }
+        return "✅ **" + r.name + "** is no longer linked to <@" + r.discordId + ">.";
+    }
+
+    // Admin: Member's Characters
+    private static Screen memberPickScreen() {
+        EntitySelectMenu select = EntitySelectMenu.create("menu:admin:chars:membersel", EntitySelectMenu.SelectTarget.USER)
+            .setPlaceholder("Choose a Discord member").build();
+        return new Screen(embed("Member's Characters", "Whose characters do you want to see?"),
+            Arrays.asList(ActionRow.of(select), backRow("menu:admin:chars")));
+    }
+
+    private static Screen memberCharactersScreen(String userId) {
+        List<CharacterStore.Record> chars = CharacterStore.linkedTo(userId);
+        StringBuilder sb = new StringBuilder("<@").append(userId).append(">\n\n");
+        if (chars.isEmpty()) sb.append("No linked characters.");
+        for (CharacterStore.Record r : chars) sb.append("- ").append(describe(r)).append("\n");
+        return new Screen(embed("Member's Characters", sb.toString()),
+            Arrays.asList(ActionRow.of(Button.secondary("menu:admin:chars:member", "Another Member")), backRow("menu:admin:chars")));
+    }
+
+    private static Screen charactersAdminResult(String message) {
+        return new Screen(embed("Characters", message), Collections.singletonList(backRow("menu:admin:chars")));
+    }
+
+    // -------------------------------------------------------------------------
+    // Professions. Members change their own characters' from My Characters; admins change
+    // anyone's from Admin Actions -> Characters. admin picks which ids and Back buttons are used.
+    // -------------------------------------------------------------------------
+
+    private static String profPrefix(boolean admin) {
+        return admin ? "menu:admin:prof:" : "menu:prof:";
+    }
+
+    private static String profBack(boolean admin) {
+        return admin ? "menu:admin:chars" : "menu:chars";
+    }
+
+    // The member's own guild characters
+    private static Screen pickCharacterScreen(IReplyCallback event) {
+        StringSelectMenu.Builder select = StringSelectMenu.create("menu:prof:addchar").setPlaceholder("Choose a character");
+        for (String c : limit(linkedCharacters(event.getUser().getId()), PAGE_SIZE)) select.addOption(c, c);
+        if (select.getOptions().isEmpty()) return charactersScreen(event);
+        return new Screen(embed("Add / Update Profession", "Which character is the profession for?"),
+            Arrays.asList(ActionRow.of(select.build()), backRow("menu:chars")));
+    }
+
+    private static Screen pickProfessionScreen(String character, boolean admin) {
         List<String> current = new ArrayList<>();
         for (String p : ProfessionManager.getProfessions(character)) current.add(ProfessionManager.profName(p));
 
-        StringSelectMenu.Builder select = StringSelectMenu.create("menu:prof:addprof:" + character).setPlaceholder("Choose a profession");
-        for (String p : ProfessionManager.VALID_PROFESSIONS) {
+        StringSelectMenu.Builder select = StringSelectMenu.create(profPrefix(admin) + "addprof:" + character).setPlaceholder("Choose a profession");
+        for (String p : ProfessionManager.validProfessions()) {
             if (current.contains(p)) select.addOption(p, p, "Already has it: update the skill level");
             else select.addOption(p, p);
         }
         return new Screen(embed("Add / Update Profession", "Which profession for **" + character + "**?"),
-            Arrays.asList(ActionRow.of(select.build()), backRow("menu:prof")));
+            Arrays.asList(ActionRow.of(select.build()), backRow(profBack(admin))));
     }
 
     private static String addProfession(IReplyCallback event, String character, String profession, String skillText) {
@@ -404,7 +663,7 @@ public final class MenuHandler {
             try {
                 skill = Integer.parseInt(skillText);
             } catch (NumberFormatException e) {
-                return "❌ The skill level must be a number between 1 and 450.";
+                return "❌ The skill level must be a number between 1 and " + GameData.skillCap() + ".";
             }
         }
         String error = ProfessionManager.add(character, profession, skill, event.getUser().getId(), event.getGuild());
@@ -413,34 +672,25 @@ public final class MenuHandler {
     }
 
     // character null: the caller's own characters, otherwise that one character (admin typed a name)
-    private static Screen removeProfessionScreen(IReplyCallback event, String character) {
+    private static Screen removeProfessionScreen(IReplyCallback event, String character, boolean admin) {
         List<String> characters = character == null ? linkedCharacters(event.getUser().getId()) : Collections.singletonList(character);
-        boolean admin = isAdmin(event) && character == null;
 
-        StringSelectMenu.Builder select = StringSelectMenu.create("menu:prof:removesel").setPlaceholder("Choose a profession to remove");
+        StringSelectMenu.Builder select = StringSelectMenu.create(profPrefix(admin) + "removesel").setPlaceholder("Choose a profession to remove");
         int count = 0;
         for (String c : characters) {
             for (String stored : ProfessionManager.getProfessions(c)) {
-                if (count >= PAGE_SIZE - 1) break;
+                if (count >= PAGE_SIZE) break;
                 select.addOption(c + ": " + ProfessionManager.formatProfession(stored), c + ":" + ProfessionManager.profName(stored));
                 count++;
             }
         }
-        if (admin) select.addOption("Another character…", OTHER, "Type any guild member's name (admin)");
 
         if (select.getOptions().isEmpty()) {
             String who = character == null ? "Your characters have" : "**" + character + "** has";
-            return new Screen(embed("Remove Profession", who + " no professions to remove."), Collections.singletonList(backRow("menu:prof")));
+            return new Screen(embed("Remove Profession", who + " no professions to remove."), Collections.singletonList(backRow(profBack(admin))));
         }
         return new Screen(embed("Remove Profession", "Which profession do you want to remove?"),
-            Arrays.asList(ActionRow.of(select.build()), backRow("menu:prof")));
-    }
-
-    private static Screen findCraftersPickScreen() {
-        StringSelectMenu.Builder select = StringSelectMenu.create("menu:prof:findsel").setPlaceholder("Choose a profession");
-        for (String p : ProfessionManager.VALID_PROFESSIONS) select.addOption(p, p);
-        return new Screen(embed("Find Crafters", "Which profession are you looking for?"),
-            Arrays.asList(ActionRow.of(select.build()), backRow("menu:prof")));
+            Arrays.asList(ActionRow.of(select.build()), backRow(profBack(admin))));
     }
 
     private static Screen findCraftersScreen(String profession) {
@@ -454,7 +704,7 @@ public final class MenuHandler {
               .append(discordId != null ? " (<@" + discordId + ">)" : "")
               .append(": ").append(ProfessionManager.formatProfession(entry[1])).append("\n");
         }
-        return new Screen(embed(profession + " (" + results.size() + ")", sb.toString()), postAndBackRow("menu:prof"));
+        return new Screen(embed(profession + " (" + results.size() + ")", sb.toString()), postAndBackRow("menu:lookup"));
     }
 
     // -------------------------------------------------------------------------
@@ -471,36 +721,81 @@ public final class MenuHandler {
 
     private static Screen adminScreen() {
         String description = String.join("\n",
-            "**Promote / Demote**: move a guild member one rank up or down in-game.",
-            "**Ignore**: stop relaying a player's messages to Discord.",
-            "**Ban**: ignore a player and kick them from the guild automatically.",
-            "**Unignore / Unban**: pick someone from the list to remove them.",
-            "**Ignore & Ban Lists**: see everyone on both lists.");
+            "**Guild Ranks**: promote or demote a guild member.",
+            "**Ignore & Ban**: keep players' messages out of Discord, or out of the guild.",
+            "**Characters**: link members' characters, and edit anyone's professions.");
         List<ActionRow> rows = Arrays.asList(
             ActionRow.of(
-                Button.success("menu:admin:ask:promote", "Promote"),
-                Button.danger("menu:admin:ask:demote", "Demote")),
-            ActionRow.of(
-                Button.primary("menu:admin:ask:ignore", "Ignore"),
-                Button.secondary("menu:admin:list:unignore:0", "Unignore"),
-                Button.danger("menu:admin:ask:ban", "Ban"),
-                Button.secondary("menu:admin:list:unban:0", "Unban"),
-                Button.primary("menu:admin:lists", "Ignore & Ban Lists")),
+                Button.primary("menu:admin:ranks", "Guild Ranks"),
+                Button.primary("menu:admin:blocks", "Ignore & Ban"),
+                Button.primary("menu:admin:chars", "Characters")),
             backRow());
         return new Screen(embed("Admin Actions", description), rows);
     }
 
+    private static Screen ranksScreen() {
+        String description = "**Promote / Demote**: move a guild member one rank up or down in game. "
+            + "The bot can only change members below its own rank.";
+        return new Screen(embed("Guild Ranks", description), Arrays.asList(
+            ActionRow.of(
+                Button.success("menu:admin:ask:promote", "Promote"),
+                Button.danger("menu:admin:ask:demote", "Demote")),
+            backRow("menu:admin")));
+    }
+
+    private static Screen blocksScreen() {
+        String description = String.join("\n",
+            "**Ignore**: stop relaying a player's messages to Discord.",
+            "**Ban**: ignore a player, and kick them from the guild automatically.",
+            "**Unignore / Unban**: pick someone from the list to take them off.");
+        return new Screen(embed("Ignore & Ban", description), Arrays.asList(
+            ActionRow.of(
+                Button.primary("menu:admin:ask:ignore", "Ignore"),
+                Button.danger("menu:admin:ask:ban", "Ban")),
+            ActionRow.of(
+                Button.secondary("menu:admin:list:unignore:0", "Unignore"),
+                Button.secondary("menu:admin:list:unban:0", "Unban")),
+            ActionRow.of(Button.primary("menu:admin:lists", "Ignore & Ban Lists")),
+            backRow("menu:admin")));
+    }
+
+    private static Screen adminCharactersScreen() {
+        String description = String.join("\n",
+            "**Give to Member**: link a guild character to a Discord member, or move it to someone else.",
+            "**Remove Link**: unlink any character from its Discord account.",
+            "**Member's Characters**: see everything a member has linked.",
+            "**Add / Remove Profession**: change any guild character's professions.");
+        return new Screen(embed("Characters", description), Arrays.asList(
+            ActionRow.of(
+                Button.primary("menu:admin:chars:give", "Give to Member"),
+                Button.danger("menu:admin:chars:remove", "Remove Link"),
+                Button.secondary("menu:admin:chars:member", "Member's Characters")),
+            ActionRow.of(
+                Button.primary("menu:admin:prof:add", "Add / Update Profession"),
+                Button.danger("menu:admin:prof:remove", "Remove Profession")),
+            backRow("menu:admin")));
+    }
+
+    // The admin section an action belongs to, to come back to after it
+    private static Screen sectionScreen(String action) {
+        return action.equals("promote") || action.equals("demote") ? ranksScreen() : blocksScreen();
+    }
+
+    private static String sectionId(String action) {
+        return action.equals("promote") || action.equals("demote") ? "menu:admin:ranks" : "menu:admin:blocks";
+    }
+
     // Returns an error message, or null when the action can go ahead
     private static String validateAdminAction(String action, String name) {
-        if (action.equals("ignore") && IgnoreManager.isIgnored(name)) return "ℹ️ **" + name + "** is already on the ignore list.";
-        if (action.equals("ban") && BanManager.isBanned(name)) return "ℹ️ **" + name + "** is already on the ban list.";
+        if (action.equals("ignore") && Blocklist.isIgnored(name)) return "ℹ️ **" + name + "** is already on the ignore list.";
+        if (action.equals("ban") && Blocklist.isBanned(name)) return "ℹ️ **" + name + "** is already on the ban list.";
         if (!action.equals("promote") && !action.equals("demote")) return null;
 
         GamePacketHandler game = game();
         if (game == null) return NOT_CONNECTED;
-        GuildMember target = findMember(game, name);
+        GuildMember target = GuildDataCache.findMember(name);
         if (target == null) return "❌ **" + name + "** isn't in the guild.";
-        GuildMember bot = findMember(game, wowchat.common.Global$.MODULE$.config().wow().character());
+        GuildMember bot = GuildDataCache.findMember(Blocklist.botCharacter());
         GuildInfo info = game.getGuildInfo();
 
         if (action.equals("promote") && bot != null) {
@@ -519,7 +814,7 @@ public final class MenuHandler {
             case "promote":
             case "demote": {
                 GamePacketHandler game = game();
-                GuildMember target = game == null ? null : findMember(game, name);
+                GuildMember target = game == null ? null : GuildDataCache.findMember(name);
                 GuildInfo info = game == null ? null : game.getGuildInfo();
                 String from = target == null ? null : rankName(info, target.rankIndex());
                 String to = target == null ? null : rankName(info, target.rankIndex() + (action.equals("promote") ? -1 : 1));
@@ -538,7 +833,7 @@ public final class MenuHandler {
             ? Button.danger("menu:admin:do:" + action + ":" + name, "Yes, " + action)
             : Button.success("menu:admin:do:" + action + ":" + name, "Yes, " + action);
         return new Screen(embed(ADMIN_TITLES.get(action), question),
-            Collections.singletonList(ActionRow.of(yes, Button.secondary("menu:admin", "Cancel"))));
+            Collections.singletonList(ActionRow.of(yes, Button.secondary(sectionId(action), "Cancel"))));
     }
 
     private static String runAdminAction(String action, String name) {
@@ -554,19 +849,22 @@ public final class MenuHandler {
                 return "✅ " + ADMIN_TITLES.get(action) + " sent for **" + name + "**.";
             }
             case "ignore":
-                return IgnoreManager.ignore(name)
+                return Blocklist.ignore(name)
                     ? "✅ **" + name + "** is now ignored. Their messages won't be relayed to Discord."
                     : "ℹ️ **" + name + "** is already on the ignore list.";
             case "unignore":
-                return IgnoreManager.unignore(name)
+                return Blocklist.unignore(name)
                     ? "✅ **" + capitalize(name) + "** is no longer ignored."
                     : "ℹ️ **" + capitalize(name) + "** isn't on the ignore list.";
             case "ban":
-                return BanManager.ban(name)
-                    ? "✅ **" + name + "** is now banned. They'll be kicked from the guild on the next check."
-                    : "ℹ️ **" + name + "** is already on the ban list.";
+            {
+                // Kicked right away if they're in the guild, not at the next check
+                boolean inGuild = GuildDataCache.findMember(name) != null;
+                if (!Blocklist.banAndKick(name, game())) return "ℹ️ **" + name + "** is already on the ban list.";
+                return "✅ **" + name + "** is now banned." + (inGuild ? " They're being kicked from the guild." : "");
+            }
             case "unban":
-                return BanManager.unban(name)
+                return Blocklist.unban(name)
                     ? "✅ **" + capitalize(name) + "** is no longer banned."
                     : "ℹ️ **" + capitalize(name) + "** isn't on the ban list.";
             default:
@@ -577,8 +875,8 @@ public final class MenuHandler {
     // Select menu of who's on the ignore or ban list, 25 per page. Null when the list is empty.
     private static Screen removeFromListScreen(String action, int page) {
         List<String> names = action.equals("unban")
-            ? BanManager.getBannedPlayers()
-            : scala.collection.JavaConverters.seqAsJavaList(IgnoreManager.getIgnoredPlayers());
+            ? Blocklist.bannedNames()
+            : Blocklist.ignoredNames();
         if (names.isEmpty()) return null;
 
         int pages = (names.size() + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -596,7 +894,7 @@ public final class MenuHandler {
                 Button.secondary("menu:admin:list:" + action + ":" + (page - 1), "◀ Prev").withDisabled(page == 0),
                 Button.secondary("menu:admin:list:" + action + ":" + (page + 1), "Next ▶").withDisabled(page >= pages - 1)));
         }
-        rows.add(backRow("menu:admin"));
+        rows.add(backRow("menu:admin:blocks"));
         String title = action.equals("unban") ? "Unban" : "Unignore";
         String footer = pages > 1 ? "\nPage " + (page + 1) + " of " + pages + "." : "";
         return new Screen(embed(title, "Pick a player to remove from the list." + footer), rows);
@@ -611,10 +909,6 @@ public final class MenuHandler {
     // -------------------------------------------------------------------------
 
     private static MessageEmbed helpEmbed() {
-        // Follows guildDiscordLinking.noteLocation: members can't edit officer notes themselves
-        String noteStep = "officer".equals(DiscordIdExtractor.getNoteLocation())
-            ? "3. Ask a guild officer to paste it in your character's **Officer Note** in WoW."
-            : "3. In WoW, open the Guild panel and paste it in your character's **Public Note**.";
         return new EmbedBuilder()
             .setColor(EMBED_COLOR)
             .setTitle("WoWChat Discord Bot", GITHUB_URL)
@@ -622,15 +916,16 @@ public final class MenuHandler {
             .addField("`/menu`", String.join("\n",
                 "Opens the bot menu. Only you can see it.",
                 "- **Who's Online**: who's playing right now, with level, race, class and zone.",
-                "- **Look Up Player**: level, class, zone and guild rank of any player.",
-                "- **Professions**: add your characters' professions, or find a crafter.",
-                "- **Admin Actions** *(bot admins)*: promote, demote, ignore and ban, and see the ignore and ban lists.",
+                "- **Look Up**: level, class, zone and guild rank of any player, or who can craft a profession.",
+                "- **My Characters**: link your WoW characters to your Discord account, and set their professions.",
+                "- **Admin Actions** *(bot admins)*: guild ranks, ignore and ban lists, and members' characters.",
                 "Most views have **Post to channel** to share them."), false)
             .addField("Link your characters", String.join("\n",
-                "1. In Discord: **User Settings → Advanced → Developer Mode** on.",
-                "2. Right-click your name, **Copy User ID**.",
-                noteStep,
-                "Linked characters show your Discord name in the guild panels, and let you set their professions."), false)
+                "1. In `/menu`, press **My Characters**, then **Claim**, and type your character's name.",
+                "2. Log in to that character and whisper the code to the bot.",
+                "3. The bot whispers back with your Discord name. Whisper `yes` to confirm.",
+                "Linked characters show your Discord name in the guild panels and next to your messages, "
+                    + "and let you set their professions. Links only count in this Discord server."), false)
             .addField("`/help`", "Show this message.", false)
             .addField("GitHub", "[github.com/ChakraaThePanda/WoWChat-Discord-Bot](" + GITHUB_URL + ")", false)
             .build();
@@ -720,10 +1015,11 @@ public final class MenuHandler {
         return Modal.create(id, title).addComponents(ActionRow.of(input)).build();
     }
 
-    private static Modal skillModal(String character, String profession) {
-        TextInput input = TextInput.create("skill", "Skill level (1-450, optional)", TextInputStyle.SHORT)
+    private static Modal skillModal(String character, String profession, boolean admin) {
+        TextInput input = TextInput.create("skill", "Skill level (1-" + GameData.skillCap() + ", optional)", TextInputStyle.SHORT)
             .setRequired(false).setMaxLength(3).build();
-        return Modal.create("modal:prof:skill:" + character + ":" + profession, profession + " for " + character)
+        String prefix = admin ? "modal:admin:prof:skill:" : "modal:prof:skill:";
+        return Modal.create(prefix + character + ":" + profession, profession + " for " + character)
             .addComponents(ActionRow.of(input)).build();
     }
 
@@ -750,12 +1046,6 @@ public final class MenuHandler {
     // Permissions and game data
     // -------------------------------------------------------------------------
 
-    // Bot owner, server owner, or a member with one of discord.commandRoleIds
-    /** The Discord account that owns the bot application. */
-    static boolean isBotOwner(String userId) {
-        return userId != null && userId.equals(ownerId);
-    }
-
     private static boolean isAdmin(IReplyCallback event) {
         String userId = event.getUser().getId();
         if (userId.equals(ownerId)) return true;
@@ -763,6 +1053,15 @@ public final class MenuHandler {
         if (guild != null && userId.equals(guild.getOwnerId())) return true;
         Member member = event.getMember();
         return ProfessionManager.hasCommandRole(member);
+    }
+
+    /** The same check from just an ID (professions). Members are cached, so no request is sent. */
+    static boolean isAdmin(String userId, Guild guild) {
+        if (userId == null) return false;
+        if (userId.equals(ownerId)) return true;
+        if (guild == null) return false;
+        if (userId.equals(guild.getOwnerId())) return true;
+        return ProfessionManager.hasCommandRole(guild.getMemberById(userId));
     }
 
     private static GamePacketHandler game() {
@@ -780,28 +1079,24 @@ public final class MenuHandler {
         return members;
     }
 
-    // Characters whose guild note holds this Discord user's ID, sorted by name
+    // This Discord user's characters that are in the guild, sorted by name (for professions)
     private static List<String> linkedCharacters(String userId) {
         List<String> names = new ArrayList<>();
         for (GuildMember m : roster()) {
-            if (userId.equals(DiscordIdExtractor.extractDiscordId(m))) names.add(m.name());
+            if (userId.equals(CharacterStore.discordIdOf(m))) names.add(m.name());
         }
         Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
         return names;
     }
 
     private static String discordIdOf(String character) {
-        for (GuildMember m : roster()) {
-            if (m.name().equalsIgnoreCase(character)) return DiscordIdExtractor.extractDiscordId(m);
-        }
-        return null;
+        GuildMember m = GuildDataCache.findMember(character);
+        return m != null ? CharacterStore.discordIdOf(m) : CharacterStore.discordIdOfName(character);
     }
 
-    private static GuildMember findMember(GamePacketHandler game, String name) {
-        scala.collection.Iterator<GuildMember> it = game.getGuildRoster().valuesIterator();
-        while (it.hasNext()) {
-            GuildMember m = it.next();
-            if (m.name().equalsIgnoreCase(name)) return m;
+    private static GuildMember findMemberByGuid(long guid) {
+        for (GuildMember m : roster()) {
+            if (m.guid() == guid) return m;
         }
         return null;
     }

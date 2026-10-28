@@ -1,7 +1,6 @@
 package wowchat.discord;
 
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigException;
 import com.typesafe.config.ConfigFactory;
 
 import java.io.File;
@@ -112,7 +111,8 @@ public final class ConfigHelper {
     }
 
     // =========================================================================
-    // NOTE LOCATION - Where to find Discord IDs in guild roster
+    // NOTE LOCATION - Where older versions kept Discord IDs in the guild roster.
+    // Only read once, to import those links into data/characters.json.
     // =========================================================================
 
     public static String getDiscordLinkingNoteLocation() {

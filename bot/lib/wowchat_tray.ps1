@@ -20,6 +20,7 @@ if (-not $mutex.WaitOne(0)) {
 $dir = Split-Path $PSScriptRoot
 $lib = Join-Path $dir "lib"
 $log = Join-Path $dir "data\bot.log"
+$oldLog = Join-Path $dir "data\bot.old.log"
 # Start WoWChat.bat finds Java (and installs it) and passes it on here
 $java = if ($env:WOWCHAT_JAVA) { $env:WOWCHAT_JAVA } else { "java" }
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
@@ -33,12 +34,16 @@ function Start-Bot {
         Where-Object { $_.CommandLine -and $_.CommandLine.Contains($lib) } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
+    # A fresh log on every start or restart from the tray. The watchdog writes it, and starts
+    # it over past 5 MB, keeping the previous part in bot.old.log.
+    Remove-Item -LiteralPath $log, $oldLog -Force -ErrorAction SilentlyContinue
+
     # The watchdog runs the bot as its own child process and restarts it if it gets stuck
     $watchdog = Join-Path $lib "watchdog.jar"
     $jar      = Join-Path $lib "wowchat.jar"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName         = "cmd.exe"
-    $psi.Arguments        = "/s /c `"`"$java`" -Dfile.encoding=UTF-8 -jar `"$watchdog`" `"$jar`" wowchat.conf > `"$log`" 2>&1`""
+    $psi.Arguments        = "/s /c `"`"$java`" -Dfile.encoding=UTF-8 -jar `"$watchdog`" --log `"$log`" `"$jar`" wowchat.conf`""
     $psi.WorkingDirectory = $dir
     $psi.UseShellExecute  = $false
     $psi.CreateNoWindow   = $true
@@ -109,15 +114,40 @@ $quit    = $menu.Items.Add("Stop bot and exit")
 $tray.ContextMenuStrip = $menu
 
 $openLog = {
+    # The last 200 lines across bot.old.log and bot.log, then new lines as they come. Reads
+    # without holding the file open, and starts from the top when the bot empties it at 5 MB.
     $cmd = @"
 `$Host.UI.RawUI.WindowTitle = 'WoWChat Bot log'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+`$log = '$($log -replace "'", "''")'
+`$old = '$($oldLog -replace "'", "''")'
 ''
 '  ============================================'
 '   WoWChat Discord Bot'
 '  ============================================'
 ''
-Get-Content -LiteralPath '$($log -replace "'", "''")' -Encoding UTF8 -Tail 200 -Wait
+`$lines = @()
+if (Test-Path -LiteralPath `$log) { `$lines = @(Get-Content -LiteralPath `$log -Encoding UTF8 -Tail 200) }
+if (`$lines.Count -lt 200 -and (Test-Path -LiteralPath `$old)) {
+    `$lines = @(Get-Content -LiteralPath `$old -Encoding UTF8 -Tail (200 - `$lines.Count)) + `$lines
+}
+`$lines
+`$pos = if (Test-Path -LiteralPath `$log) { (Get-Item -LiteralPath `$log).Length } else { 0 }
+while (`$true) {
+    Start-Sleep -Milliseconds 500
+    if (-not (Test-Path -LiteralPath `$log)) { `$pos = 0; continue }
+    `$len = (Get-Item -LiteralPath `$log).Length
+    if (`$len -lt `$pos) { `$pos = 0 }
+    if (`$len -le `$pos) { continue }
+    try {
+        `$fs = [IO.File]::Open(`$log, 'Open', 'Read', 'ReadWrite, Delete')
+        `$null = `$fs.Seek(`$pos, 'Begin')
+        `$reader = New-Object IO.StreamReader(`$fs, [Text.Encoding]::UTF8)
+        [Console]::Write(`$reader.ReadToEnd())
+        `$pos = `$fs.Position
+        `$reader.Close()
+    } catch {}
+}
 "@
     # Encoded so spacing and quotes survive Start-Process argument joining
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))

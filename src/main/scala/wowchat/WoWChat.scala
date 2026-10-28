@@ -83,16 +83,16 @@ object WoWChat extends StrictLogging {
     logger.info("Connecting to Discord...")
     Global.discord = try new Discord(new CommonConnectionCallback {
       override def connected: Unit = {
-        wowchat.discord.DiscordIdExtractor.initialize()
-        
+        // Per-character data and the ban/ignore lists, before anything reads them
+        wowchat.discord.CharacterStore.init()
+        wowchat.discord.Blocklist.init()
+
         wowchat.discord.GuildOnlineListPublisher.init()
         wowchat.discord.GuildStatusRotation.init()
         wowchat.discord.GuildRoleSync.init()
         wowchat.discord.GuildRosterPublisher.init()
         wowchat.discord.DiscordDMHandler.init()
         wowchat.discord.AutoGuildInviteHandler.init()
-        wowchat.discord.IgnoreManager.init()
-        wowchat.discord.BanManager.init()
         gameConnectionController.connect
       }
 

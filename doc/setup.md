@@ -19,7 +19,7 @@ Download the [latest version](https://github.com/ChakraaThePanda/WoWChat-Discord
 
 ### 3. Create the bot's WoW character
 1. Make a WoW account and a character for the bot, and invite that character to your guild.
-2. Give it a guild rank with the permissions your features need. The comments in `wowchat.conf` say when a feature needs one, such as reading officer notes, inviting, removing, promoting or demoting members. The bot can only promote, demote or remove members below its own rank.
+2. Give it a guild rank with the permissions your features need. The comments in `wowchat.conf` say when a feature needs one, such as inviting, removing, promoting or demoting members. The bot can only promote, demote or remove members below its own rank.
 
 ### 4. Fill in the config
 Open `bot/wowchat.conf` in a text editor (Notepad works) and replace each `FILL_ME_IN`:
@@ -54,6 +54,8 @@ If the bot loses its connection to WoW or Discord, it reconnects or restarts its
 * **Run in a window instead**: from a terminal in the `bot` folder, run `"Start WoWChat.bat" console`.
 
 ### Updating
-Extract the new version to a new folder, then copy `wowchat.conf` and the `data` folder from your old `bot` folder into the new one. This keeps your settings, professions, and ignore and ban lists. New settings come with their defaults, so compare with the new `wowchat.conf` if you want to try them.
+Extract the new version to a new folder, then copy `wowchat.conf` and the `data` folder from your old `bot` folder into the new one. This keeps your settings, linked characters, professions, and ignore and ban lists. New settings come with their defaults, so compare with the new `wowchat.conf` if you want to try them.
+
+Coming from a version where members put their Discord ID in their guild note? They stay linked: on its first start, the bot copies those links over by itself. After that, the notes aren't used anymore.
 
 Coming from an older version that started with `run.bat`? Do the same, then start the bot with `Start WoWChat.bat` instead, and update your Windows startup shortcut if you had one.

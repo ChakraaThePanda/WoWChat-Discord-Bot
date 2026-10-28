@@ -20,18 +20,13 @@ object CommandHandler extends StrictLogging {
     
     // Helper to get Discord owner info
     def getDiscordOwner(charName: String): String = {
+      // Guild members by their GUID; anyone else by name, since /who answers carry no GUID
       discordGuild.flatMap { guild =>
-        val member = wowchat.discord.GuildDataCache.getInstance().getMember(charName)
-        if (member == null) None
-        else {
-          val discordId = wowchat.discord.DiscordIdExtractor.extractDiscordId(member)
-          if (discordId == null) None
-          else {
-            Option(guild.getMemberById(discordId)).map { member =>
-              s" (Owned by <@$discordId>)"
-            }
-          }
-        }
+        val member = wowchat.discord.GuildDataCache.findMember(charName)
+        val discordId =
+          if (member != null) wowchat.discord.CharacterStore.discordIdOf(member)
+          else wowchat.discord.CharacterStore.discordIdOfName(charName)
+        Option(discordId).flatMap(id => Option(guild.getMemberById(id))).map(_ => s" (Owned by <@$discordId>)")
       }.getOrElse("")
     }
     
@@ -50,6 +45,9 @@ object CommandHandler extends StrictLogging {
         .filter(guildRosterMatcherFunc)
         .map(guildMember => {
           val cls = new GamePackets{}.Classes.valueOf(guildMember.charClass)
+          // From name lookups (Look Up asks for it first): empty if still unknown
+          val race = wowchat.discord.GuildOnlineListPublisher.getRace(guildMember.name).trim
+          val raceStr = if (race.isEmpty) "" else s"$race "
           val days = guildMember.lastLogoff.toInt
           val hours = ((guildMember.lastLogoff * 24) % 24).toInt
           val minutes = ((guildMember.lastLogoff * 24 * 60) % 60).toInt
@@ -65,7 +63,7 @@ object CommandHandler extends StrictLogging {
           }
 
           val owner = getDiscordOwner(guildMember.name)
-          s"${guildMember.name}$guildNameStr is a level ${guildMember.level} $cls currently offline. " +
+          s"${guildMember.name}$guildNameStr is a level ${guildMember.level} $raceStr$cls currently offline. " +
             s"Last seen$daysStr$hoursStr$minutesStr ago in ${GameResources.AREA.getOrElse(guildMember.zoneId, "Unknown Zone")}.$owner"
         })
     })

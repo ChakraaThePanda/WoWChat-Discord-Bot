@@ -16,7 +16,8 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
 case class Player(name: String, charClass: Byte)
-case class GuildMember(name: String, isOnline: Boolean, charClass: Byte, level: Byte, zoneId: Int, lastLogoff: Float, rankIndex: Int = 0, publicNote: String = "", officerNote: String = "")
+// guid is the character's permanent id: it stays the same through renames
+case class GuildMember(name: String, isOnline: Boolean, charClass: Byte, level: Byte, zoneId: Int, lastLogoff: Float, rankIndex: Int = 0, publicNote: String = "", officerNote: String = "", guid: Long = 0L)
 case class ChatMessage(guid: Long, tp: Byte, message: String, channel: Option[String] = None)
 case class NameQueryMessage(guid: Long, name: String, charClass: Byte, race: String = "")
 case class AuthChallengeMessage(sessionKey: Array[Byte], byteBuf: ByteBuf)
@@ -264,18 +265,34 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       while (b != 0) { nameBytes += b; b = msg.byteBuf.readByte() }
       val name = new String(nameBytes.toArray, "UTF-8")
       val result = msg.byteBuf.readIntLE()
+      // The server sends the kind of command (not its opcode) and a result code, as in
+      // AzerothCore's GuildCommandType and GuildCommandError
       val tag = command match {
-        case 0x08B => "[GuildRank] Promote"
-        case 0x08C => "[GuildRank] Demote"
-        case 0x08E => "[BanList] Kick"
-        case _     => "[WhisperInvite] Invite"
+        case 1 => "[WhisperInvite] Invite"
+        case 6 => "[GuildRank] Promote"
+        case 7 => "[GuildRank] Demote"
+        case 8 => "[BanList] Kick"
+        case c => s"[GuildCommand] Command $c"
       }
-      result match {
-        case 0 => logger.info(s"$tag succeeded for: $name")
-        case 2 => logger.warn(s"$tag failed: $name is already in a guild")
-        case 3 => logger.warn(s"$tag failed: $name is already invited")
-        case 5 => logger.warn(s"$tag failed: player $name not found")
-        case r => logger.warn(s"$tag result for $name: code $r")
+      val reason = result match {
+        case 0  => None
+        case 2 | 3 => Some(s"$name is already in a guild")
+        case 4 | 5 => Some(s"$name is already invited")
+        case 8  => Some("the bot's guild rank doesn't allow it")
+        case 9 | 10 => Some(s"$name isn't in the guild")
+        case 11 => Some(s"player $name not found")
+        case 12 => Some(s"$name is from the other faction")
+        case 13 => Some(s"$name's rank is too high for the bot")
+        case 14 => Some(s"$name's rank is too low")
+        case 19 => Some(s"$name is ignoring the bot")
+        case r  => Some(s"code $r")
+      }
+      reason match {
+        case None => logger.info(s"$tag succeeded for: $name")
+        case Some(why) => logger.warn(s"$tag failed for $name: $why")
+      }
+      if (command == 8 && reason.isDefined) {
+        wowchat.discord.Blocklist.onKickFailed(name, result)
       }
     } catch {
       case e: Exception => logger.warn(s"[GuildCommand] Could not parse SMSG_GUILD_COMMAND_RESULT: ${e.getMessage}")
@@ -291,6 +308,18 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   override def sendWho(request: WhoRequest): Unit = {
+    // An offline guild member is described from the roster, which has no race: ask for it first.
+    // The server answers in order, so it's known by the time the /who answer arrives.
+    guildRoster
+      .find { case (_, m) => m.name.equalsIgnoreCase(request.playerName) }
+      .filter { case (_, m) => wowchat.discord.GuildOnlineListPublisher.getRace(m.name).isEmpty }
+      .foreach { case (guid, _) => sendNameQuery(guid) }
+    // A link found by this name may belong to a character that was deleted or renamed since
+    // (someone else can then have the name). Ask who has its id now: the answer comes before the
+    // /who one, and removes or renames the link, so the wrong owner is never shown.
+    Option(wowchat.discord.CharacterStore.byName(request.playerName))
+      .filterNot(r => guildRoster.contains(r.guid))
+      .foreach(r => sendNameQuery(r.guid))
     sendWhoPacket(Some(request), request.playerName)
   }
 
@@ -321,6 +350,12 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   // System messages right after .server info are read even when no Discord channel shows them
   protected def isServerInfoReply(tp: Byte): Boolean =
     tp == ChatEvents.CHAT_MSG_SYSTEM && System.currentTimeMillis - serverInfoSentAt < 5000
+
+  // Chat worth reading: what's relayed to Discord, the answer to .server info, and every
+  // whisper, since claim codes arrive by whisper even when no whisper channel is set up
+  protected def isChatWanted(tp: Byte, channelName: Option[String]): Boolean =
+    Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) || isServerInfoReply(tp) ||
+      tp == ChatEvents.CHAT_MSG_WHISPER
 
   // Reads the answer to .server info. True when the line was part of it.
   private def handleServerInfoLine(message: String): Boolean = {
@@ -495,23 +530,24 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       if (nameQueryMessage.race.nonEmpty) {
         wowchat.discord.GuildOnlineListPublisher.cacheRace(nameQueryMessage.name, nameQueryMessage.race)
       }
+      // Follows renames of characters the bot keeps data for
+      wowchat.discord.CharacterStore.onSeen(nameQueryMessage.guid, nameQueryMessage.name)
 
       // Process any pending whisper invites for this guid
       wowchat.discord.AutoGuildInviteHandler.onNameResolved(nameQueryMessage.guid, nameQueryMessage.name, nameQueryMessage.charClass, nameQueryMessage.race, this)
 
+      // A guild member who just joined, whose race wasn't known yet: check the race rules now
+      wowchat.discord.Blocklist.onRaceKnown(nameQueryMessage.guid, nameQueryMessage.name, this)
+
       queuedChatMessages
         .remove(nameQueryMessage.guid)
         .foreach(messages => {
-          messages.foreach(message => {
-            // Check ignore and ban lists before sending queued messages
-            if (!wowchat.discord.IgnoreManager.isIgnored(nameQueryMessage.name) &&
-                !wowchat.discord.BanManager.isBanned(nameQueryMessage.name)) {
-              Global.discord.sendMessageFromWow(Some(nameQueryMessage.name), message.message, message.tp, message.channel)
-            }
-          })
+          messages.foreach(message => deliverChat(nameQueryMessage.guid, nameQueryMessage.name, message))
           playerRoster += nameQueryMessage.guid -> Player(nameQueryMessage.name, nameQueryMessage.charClass)
         })
     } else {
+      // No character has this id anymore (deleted): its link is removed
+      wowchat.discord.CharacterStore.onNameUnknown(nameQueryMessage.guid)
       // Name not known — discard any queued messages for this guid to prevent memory leak
       queuedChatMessages.remove(nameQueryMessage.guid)
     }
@@ -690,6 +726,13 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       return
     }
 
+    // Someone joined: a banned name is kicked right away. The roster is asked for now (not in
+    // up to a minute) so the class and race rules can be checked too.
+    if (event == GuildEvents.GE_JOINED) {
+      wowchat.discord.Blocklist.onJoined(messages.head, this)
+      forceRosterRefresh()
+    }
+
     val eventConfigKey = event match {
       case GuildEvents.GE_PROMOTED => "promoted"
       case GuildEvents.GE_DEMOTED => "demoted"
@@ -734,13 +777,22 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   private def handle_SMSG_GUILD_ROSTER(msg: Packet): Unit = {
     // Replaced in place, without clearing first: other threads read the roster meanwhile
     val fresh = parseGuildRoster(msg)
+    // Members who weren't in the last roster: everyone, on the first roster after logging in
+    val joined = fresh.filterKeys(guid => !guildRoster.contains(guid)).values.toList
     guildRoster --= guildRoster.keys.filterNot(fresh.contains).toList
     guildRoster ++= fresh
     updateGuildiesOnline
-    // Clean up professions.json entries for characters no longer in guild
-    val memberNames = new java.util.HashSet[String]()
-    guildRoster.values.foreach(m => memberNames.add(m.name.toLowerCase))
-    wowchat.discord.ProfessionManager.cleanupStaleEntries(memberNames)
+
+    import scala.collection.JavaConverters._
+    // Names, rank timers and "still in the guild" for data/characters.json
+    wowchat.discord.CharacterStore.onRoster(fresh.values.toList.asJava)
+    // Ban, class and race rules for whoever just joined, without waiting for the next sweep
+    if (joined.nonEmpty) {
+      wowchat.discord.Blocklist.checkNewMembers(joined.asJava, this)
+    }
+    // Linked characters outside the guild: once after startup, then hourly, ask the server who
+    // has each one's id now, to follow renames and drop deleted characters' links
+    wowchat.discord.CharacterStore.linksToCheck().asScala.foreach(guid => sendNameQuery(guid))
 
     // Name lookups give each member's race. Only ask for members whose race isn't known yet:
     // online ones always, offline ones when a guild panel shows them.
@@ -774,7 +826,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       val publicNote = msg.readString // public note
       val officerNote = msg.readString
 
-      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, rankIndex, publicNote, officerNote)
+      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, rankIndex, publicNote, officerNote, guid)
     }).toMap
   }
 
@@ -819,13 +871,24 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
           queuedChatMessages += chatMessage.guid -> ListBuffer(chatMessage)
           sendNameQuery(chatMessage.guid)
         })(buf => if (buf.size < 10) buf += chatMessage)
-      })(name => {
-        // Check if player is ignored or banned before relaying to Discord
-        if (!wowchat.discord.IgnoreManager.isIgnored(name.name) &&
-            !wowchat.discord.BanManager.isBanned(name.name)) {
-          Global.discord.sendMessageFromWow(Some(name.name), chatMessage.message, chatMessage.tp, chatMessage.channel)
-        }
-      })
+      })(player => deliverChat(chatMessage.guid, player.name, chatMessage))
+    }
+  }
+
+  // A player's message, once their name is known
+  private def deliverChat(guid: Long, name: String, chatMessage: ChatMessage): Unit = {
+    // Follows renames of characters the bot keeps data for
+    wowchat.discord.CharacterStore.onSeen(guid, name)
+
+    // Claim codes and their yes/no stay between the player and the bot
+    if (chatMessage.tp == ChatEvents.CHAT_MSG_WHISPER &&
+        wowchat.discord.CharacterClaims.handleWhisper(guid, name, chatMessage.message, this)) {
+      return
+    }
+
+    // Ignored and banned players aren't relayed to Discord
+    if (!wowchat.discord.Blocklist.isIgnored(name) && !wowchat.discord.Blocklist.isBanned(guid, name)) {
+      Global.discord.sendMessageFromWow(Some(name), chatMessage.message, chatMessage.tp, chatMessage.channel, guid)
     }
   }
 
@@ -847,7 +910,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
 
     // ignore if from an unhandled channel
-    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
+    if (!isChatWanted(tp, channelName)) {
       return None
     }
 

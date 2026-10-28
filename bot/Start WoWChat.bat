@@ -78,10 +78,10 @@ if %errorlevel% equ 0 (
 
 :: ── Start ─────────────────────────────────────────────────────────────────────
 :: Runs in the system tray by default. Use "Start WoWChat.bat" console to run in this window instead.
-if /i not "%~1"=="console" if exist "lib\tray.ps1" (
+if /i not "%~1"=="console" if exist "lib\wowchat_tray.ps1" (
     echo  Starting bot in the system tray...
     echo  Right-click the tray icon to view the log, restart, or stop the bot.
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\tray.ps1" -Detach
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lib\wowchat_tray.ps1" -Detach
     exit /b
 )
 

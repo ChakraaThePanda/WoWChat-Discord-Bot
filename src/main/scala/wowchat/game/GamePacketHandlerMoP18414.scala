@@ -565,7 +565,7 @@ class GamePacketHandlerMoP18414(realmId: Int, realmName: String, sessionKey: Arr
     }
 
     // ignore if from an unhandled channel - unless it is a guild achievement message
-    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase))) && !isServerInfoReply(tp)) {
+    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !isChatWanted(tp, channelName)) {
       return None
     }
 
@@ -668,7 +668,8 @@ class GamePacketHandlerMoP18414(realmId: Int, realmName: String, sessionKey: Arr
       msg.readXorByteSeq(guids(i), 6, 1, 2)
       val isOnline = (flags & 0x01) == 0x01
 
-      ByteUtils.bytesToLongLE(guids(i)) -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, publicNote = publicNote, officerNote = officerNote)
+      val guid = ByteUtils.bytesToLongLE(guids(i))
+      guid -> GuildMember(name, isOnline, charClass, level, zoneId, lastLogoff, publicNote = publicNote, officerNote = officerNote, guid = guid)
     }).toMap
 
     msg.byteBuf.skipBytes(4) // accounts number

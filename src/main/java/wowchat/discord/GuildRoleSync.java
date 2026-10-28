@@ -4,7 +4,7 @@
  * Automatically syncs Discord roles to guild members based on their in-game guild ranks.
  *
  * HOW IT WORKS:
- *   1. Groups all guild characters by Discord ID (from officer notes)
+ *   1. Groups all guild characters by the Discord account they're linked to (CharacterStore)
  *   2. For each Discord user, collects all their characters' guild ranks
  *   3. For each rank configured in guildRoleSync:
  *      - If user has ANY character with that rank → ADD Discord role
@@ -15,9 +15,7 @@
  * CONFIG (wowchat.conf): guildDiscordLinking.roleSync, a list of
  *   { guildRank = "Member", discordRoleId = 000000000000000000 }
  *
- *   Guild members should put their Discord user ID (numeric) in their officer note in-game.
- *   To get your Discord user ID: Enable Developer Mode in Discord settings, then right-click
- *   your username and select "Copy User ID".
+ *   Members link their characters in /menu -> My Characters.
  *
  * RANK NAMES:
  *   Rank names are matched case-insensitively against the rank names stored in GuildInfo,
@@ -31,7 +29,6 @@ package wowchat.discord;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
-import com.typesafe.config.ConfigFactory;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
@@ -128,7 +125,7 @@ public final class GuildRoleSync {
         while (it.hasNext()) {
             GuildMember member = it.next();
 
-            String discordId = DiscordIdExtractor.extractDiscordId(member);
+            String discordId = CharacterStore.discordIdOf(member);
             if (discordId == null) continue;
 
             String rankName = rankNames.getOrDefault(member.rankIndex(), "").toLowerCase(Locale.ROOT);
@@ -198,7 +195,7 @@ public final class GuildRoleSync {
         }
 
         // Clean up: Remove guild roles from Discord members who are NOT in discordIdToRanks
-        // This handles: users who left guild, users whose Discord ID was removed, or config change to public notes
+        // This handles: users who left the guild, characters that were unlinked, or a rank change
         List<Member> allMembers = discordGuild.getMembers();
         for (Member discordMember : allMembers) {
             String discordId = discordMember.getId();

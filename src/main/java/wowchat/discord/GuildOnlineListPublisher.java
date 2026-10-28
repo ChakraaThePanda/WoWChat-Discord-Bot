@@ -7,17 +7,14 @@ package wowchat.discord;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
-import com.typesafe.config.ConfigFactory;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import java.awt.Color;
 import net.dv8tion.jda.api.entities.Message;
-import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import scala.Option;
 import wowchat.common.Global$;
-import wowchat.discord.DiscordDMHandler;
 import wowchat.game.GameCommandHandler;
 import wowchat.game.GamePacketHandler;
 import wowchat.game.GuildMember;
@@ -84,10 +81,6 @@ public final class GuildOnlineListPublisher {
     // -------------------------------------------------------------------------
     // Init - called once from WoWChat.main()
     // -------------------------------------------------------------------------
-
-    public static int getUpdateMinutes() {
-        return updateMinutes;
-    }
 
     public static synchronized void init() {
         if (started) return;
@@ -363,23 +356,18 @@ public final class GuildOnlineListPublisher {
                 return entry.substring(0, spaceAfterLevel + 1) + race + entry.substring(spaceAfterLevel + 1);
             });
 
-            // Append Discord mention if officer note contains a valid Discord ID
-            scala.collection.Map<Object, GuildMember> roster = ((GamePacketHandler) handler).guildRoster();
+            // Append a Discord mention if the character is linked to an account
+            Map<String, GuildMember> byName = new HashMap<>();
+            scala.collection.Iterator<GuildMember> it = ((GamePacketHandler) handler).guildRoster().valuesIterator();
+            while (it.hasNext()) {
+                GuildMember m = it.next();
+                byName.put(m.name().toLowerCase(Locale.ROOT), m);
+            }
             result.replaceAll(entry -> {
                 int parenOpen = entry.indexOf(" (");
                 String charName = parenOpen > 0 ? entry.substring(0, parenOpen) : entry;
-                scala.collection.Iterator<GuildMember> it = roster.valuesIterator();
-                while (it.hasNext()) {
-                    GuildMember m = it.next();
-                    if (m.name().equalsIgnoreCase(charName.trim())) {
-                        String discordId = DiscordIdExtractor.extractDiscordId(m);
-                        if (discordId != null) {
-                            return entry + " (<@" + discordId + ">)";
-                        }
-                        break;
-                    }
-                }
-                return entry;
+                String discordId = CharacterStore.discordIdOf(byName.get(charName.trim().toLowerCase(Locale.ROOT)));
+                return discordId != null ? entry + " (<@" + discordId + ">)" : entry;
             });
 
             return result;
@@ -434,9 +422,7 @@ public final class GuildOnlineListPublisher {
 
     private static void loadConfig() {
         try {
-            String configFile = System.getProperty("wowchat.configFile", "wowchat.conf");
-            Config config = ConfigFactory.parseFile(new File(configFile))
-                .resolve(com.typesafe.config.ConfigResolveOptions.defaults().setAllowUnresolved(true));
+            Config config = ConfigHelper.getConfig();
 
             // Check if guild online list is enabled
             boolean enabled = true; // Default enabled for backward compat

@@ -14,12 +14,12 @@ From [WoWChat](https://github.com/fjaros/wowchat) by fjaros, which this bot star
 * Works without a WoW client, on Vanilla through Mists of Pandaria servers
 
 Added in this version:
-* `/menu`: Who's Online, Look Up Player, Professions and Admin Actions, all with buttons
+* `/menu`: Who's Online, Look Up, My Characters and Admin Actions, all with buttons
 * Who's Online: a post that always shows who's online, with level, race, class and zone
 * Guild Roster: every guild member grouped by Discord account, with guild stats and an officer checklist
 * Promotion timers, with optional automatic promotions
 * Role Sync: Discord roles follow in-game guild ranks, plus inactivity tracking
-* Professions: members list their characters' professions so others can find a crafter
+* Character linking: members prove a character is theirs with a whisper in game, and list its professions so others can find a crafter
 * Whisper Invite: players whisper the bot a word and get a guild invite
 * Death Ping: mention a Discord role when a guild member dies
 * Bot Status: the bot's Discord status shows how many players or guild members are online
@@ -40,19 +40,20 @@ The **[setup guide](doc/setup.md)** walks you through each step, then turning on
 ### In Discord
 Type `/menu` to open the bot's menu, or `/help` for a quick overview. Only you see the menu.
 * **Who's Online**: who's playing right now, with level, race, class and zone.
-* **Look Up Player**: level, class, zone and guild rank of any player.
-* **Professions**: add or remove your characters' professions, or **Find Crafters** for one.
-* **Admin Actions** (for the server owner and the admin roles you pick in `wowchat.conf`): promote, demote, ignore, unignore, ban and unban, and see the ignore and ban lists.
+* **Look Up**: level, class, zone and guild rank of any player, or who in the guild can craft a profession.
+* **My Characters**: link your WoW characters to your Discord account, and add or remove their professions.
+* **Admin Actions** (for the server owner and the admin roles you pick in `wowchat.conf`):
+  * **Guild Ranks**: promote and demote.
+  * **Ignore & Ban**: ignore, unignore, ban and unban, and see both lists.
+  * **Characters**: give a character to a member, remove a link, see a member's characters, and edit anyone's professions.
 
 Most views have **Post to channel** to share them with everyone.
 
 #### Link your characters
-Linking your characters to your Discord account shows your Discord name next to them in the guild panels, and lets you set their professions. Each member does this for their own characters:
-1. In Discord, turn on Developer Mode: **User Settings → Advanced → Developer Mode**.
-2. Right-click your name anywhere in Discord and click **Copy User ID**.
-3. In WoW, open the Guild panel and paste your User ID in your character's **Officer Note** (ask an officer) or **Public Note**, whichever your guild uses.
+Linking your characters to your Discord account shows your Discord name next to them in the guild panels and in chat, and lets you set their professions. Each member does this for their own characters:
+1. In Discord, type `/menu`, press **My Characters**, then **Claim**, and type your character's name. The bot gives you a code.
+2. Log in to that character and whisper the code to the bot.
+3. The bot whispers back with your Discord name. Whisper `yes` to confirm.
 
-The bot picks it up within a few minutes.
-
-![How to link your Discord ID](doc/discord-link.png)
+You can unlink a character the same way, with **Unclaim**. Admins can also give a character to a member, or remove a link. Links only count in your Discord server.
 

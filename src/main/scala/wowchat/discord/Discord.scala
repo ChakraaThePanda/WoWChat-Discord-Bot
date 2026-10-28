@@ -12,7 +12,7 @@ import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel
 import net.dv8tion.jda.api.events.StatusChangeEvent
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent
-import net.dv8tion.jda.api.events.interaction.component.{ButtonInteractionEvent, StringSelectInteractionEvent}
+import net.dv8tion.jda.api.events.interaction.component.{ButtonInteractionEvent, EntitySelectInteractionEvent, StringSelectInteractionEvent}
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.events.session.ShutdownEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
@@ -209,7 +209,8 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
     changeStatus(ActivityType.CUSTOM_STATUS, message)
   }
 
-  def sendMessageFromWow(from: Option[String], message: String, wowType: Byte, wowChannel: Option[String]): Unit = {
+  // fromGuid: the sender's character id, 0 when unknown. Finds who it's linked to, even outside the guild.
+  def sendMessageFromWow(from: Option[String], message: String, wowType: Byte, wowChannel: Option[String], fromGuid: Long = 0L): Unit = {
     Global.wowToDiscord.get((wowType, wowChannel.map(_.toLowerCase))).foreach(discordChannels => {
       // Strip server-injected prefixes (e.g. "{?" or "[HC] " added by some private servers)
       val cleanMessage = if (message.startsWith("{?")) {
@@ -236,14 +237,12 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
 
           val (userDisplay, hasDiscordTag) = if (channelConfig.showTagInDiscord) {
             from.map { charName =>
-              Global.game.flatMap {
-                case handler: wowchat.game.GamePacketHandler =>
-                  handler.getGuildRoster.valuesIterator
-                    .find(_.name.equalsIgnoreCase(charName))
-                    .flatMap(member => Option(DiscordIdExtractor.extractDiscordId(member)))
-                    .map(discordId => (s"<@$discordId>/$charName", true))
-                case _ => None
-              }.getOrElse((charName, false))
+              val discordId =
+                if (fromGuid != 0) CharacterStore.discordIdOf(fromGuid)
+                else CharacterStore.discordIdOfName(charName)
+              Option(discordId)
+                .map(id => (s"<@$id>/$charName", true))
+                .getOrElse((charName, false))
             }.getOrElse(("", false))
           } else {
             (from.getOrElse(""), false)
@@ -445,6 +444,11 @@ class Discord(discordConnectionCallback: CommonConnectionCallback) extends Liste
 
   override def onStringSelectInteraction(event: StringSelectInteractionEvent): Unit = {
     MenuHandler.handleSelect(event)
+  }
+
+  // Picking a Discord member in /menu (admins giving a character, or looking up someone's)
+  override def onEntitySelectInteraction(event: EntitySelectInteractionEvent): Unit = {
+    MenuHandler.handleEntitySelect(event)
   }
 
   override def onModalInteraction(event: ModalInteractionEvent): Unit = {

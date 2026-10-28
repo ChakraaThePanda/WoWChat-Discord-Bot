@@ -3,11 +3,8 @@ package wowchat.discord;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
-import scala.Option;
 import wowchat.common.Global$;
 import wowchat.common.WowChatConfig$;
-import wowchat.game.GameCommandHandler;
-import wowchat.game.GamePacketHandler;
 import wowchat.game.GuildMember;
 
 import java.awt.Color;
@@ -72,15 +69,6 @@ public final class GuildStatsPublisher {
         return ConfigHelper.isStatsEnabled();
     }
 
-    // Returns the WowExpansion ordinal: Vanilla=0, TBC=1, WotLK=2, Cataclysm=3, MoP=4
-    private static int getExpansionOrdinal() {
-        try {
-            return WowChatConfig$.MODULE$.getExpansion().id();
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
     private static List<String> filterBanned(List<String> names, List<String> banned) {
         List<String> result = new ArrayList<>();
         for (String name : names) {
@@ -94,7 +82,7 @@ public final class GuildStatsPublisher {
     private static MessageEmbed buildStatsEmbed() {
         Collection<GuildMember> members = GuildDataCache.getInstance().getMembers(true);
 
-        int expansionId = getExpansionOrdinal();
+        int expansionId = GameData.expansion();
         List<String> bannedClasses = ConfigHelper.getBannedClasses();
         List<String> bannedRaces = ConfigHelper.getBannedRaces();
 
@@ -142,15 +130,7 @@ public final class GuildStatsPublisher {
         for (String c : activeClasses) classCounts.put(c, 0);
 
         Map<String, Integer> levelCounts = new LinkedHashMap<>();
-        levelCounts.put("1-10", 0);
-        levelCounts.put("11-20", 0);
-        levelCounts.put("21-30", 0);
-        levelCounts.put("31-40", 0);
-        levelCounts.put("41-50", 0);
-        levelCounts.put("51-60", 0);
-        levelCounts.put("61-70", 0);
-        levelCounts.put("71-79", 0);
-        levelCounts.put("80+", 0);
+        for (String bracket : GameData.levelBrackets()) levelCounts.put(bracket, 0);
 
         for (GuildMember m : members) {
             // Faction
@@ -170,22 +150,14 @@ public final class GuildStatsPublisher {
             }
 
             // Class - only count if in active list (respects expansion + banned)
-            String cls = getClassName(m.charClass());
+            String cls = GameData.className(m.charClass());
             if (classCounts.containsKey(cls)) {
                 classCounts.put(cls, classCounts.get(cls) + 1);
             }
 
-            // Level brackets
+            // Level bars follow the game version (GameData.levelBrackets)
             int level = m.level() & 0xFF;
-            if (level >= 1 && level <= 10)   levelCounts.put("1-10",  levelCounts.get("1-10")  + 1);
-            else if (level <= 20)             levelCounts.put("11-20", levelCounts.get("11-20") + 1);
-            else if (level <= 30)             levelCounts.put("21-30", levelCounts.get("21-30") + 1);
-            else if (level <= 40)             levelCounts.put("31-40", levelCounts.get("31-40") + 1);
-            else if (level <= 50)             levelCounts.put("41-50", levelCounts.get("41-50") + 1);
-            else if (level <= 60)             levelCounts.put("51-60", levelCounts.get("51-60") + 1);
-            else if (level <= 70)             levelCounts.put("61-70", levelCounts.get("61-70") + 1);
-            else if (level <= 79)             levelCounts.put("71-79", levelCounts.get("71-79") + 1);
-            else                              levelCounts.put("80+",   levelCounts.get("80+")   + 1);
+            if (level >= 1) levelCounts.merge(GameData.levelBracket(level), 1, Integer::sum);
         }
 
         Map<String, Integer> profCounts = getProfessionCounts();
@@ -231,23 +203,6 @@ public final class GuildStatsPublisher {
         if (horde.contains(race))    return "Horde";
         if (alliance.contains(race)) return "Alliance";
         return "Unknown";
-    }
-
-    private static String getClassName(byte charClass) {
-        switch (charClass) {
-            case 0x01: return "Warrior";
-            case 0x02: return "Paladin";
-            case 0x03: return "Hunter";
-            case 0x04: return "Rogue";
-            case 0x05: return "Priest";
-            case 0x06: return "Death Knight";
-            case 0x07: return "Shaman";
-            case 0x08: return "Mage";
-            case 0x09: return "Warlock";
-            case 0x0A: return "Monk";
-            case 0x0B: return "Druid";
-            default:   return "Unknown";
-        }
     }
 
     // Faction graph: Always show both factions in order (Alliance, Horde)
@@ -347,10 +302,7 @@ public final class GuildStatsPublisher {
 
         int maxDigits = String.valueOf(maxCount).length();
 
-        List<String> levelOrder = Arrays.asList(
-            "1-10", "11-20", "21-30", "31-40", "41-50",
-            "51-60", "61-70", "71-79", "80+"
-        );
+        List<String> levelOrder = GameData.levelBrackets();
 
         StringBuilder sb = new StringBuilder("```\n");
         for (String bracket : levelOrder) {
@@ -397,17 +349,8 @@ public final class GuildStatsPublisher {
     private static Map<String, Integer> getProfessionCounts() {
         Map<String, Integer> counts = new LinkedHashMap<>();
 
-        counts.put("Alchemy", 0);
-        counts.put("Blacksmithing", 0);
-        counts.put("Enchanting", 0);
-        counts.put("Engineering", 0);
-        counts.put("Herbalism", 0);
-        counts.put("Inscription", 0);
-        counts.put("Jewelcrafting", 0);
-        counts.put("Leatherworking", 0);
-        counts.put("Mining", 0);
-        counts.put("Skinning", 0);
-        counts.put("Tailoring", 0);
+        // Only the professions that exist in this game version
+        for (String p : GameData.professions()) counts.put(p, 0);
 
         try {
             Collection<GuildMember> members = GuildDataCache.getInstance().getMembers(true);
@@ -416,7 +359,7 @@ public final class GuildStatsPublisher {
                 List<String> profs = ProfessionManager.getProfessions(m.name());
                 for (String stored : profs) {
                     String prof = ProfessionManager.profName(stored);
-                    counts.put(prof, counts.getOrDefault(prof, 0) + 1);
+                    if (counts.containsKey(prof)) counts.put(prof, counts.get(prof) + 1);
                 }
             }
         } catch (Throwable t) {

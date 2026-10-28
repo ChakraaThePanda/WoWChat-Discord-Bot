@@ -28,7 +28,6 @@ public final class GuildDataCache {
     
     // Cached data
     private Map<String, GuildMember> memberByName = new LinkedHashMap<>();
-    private Map<String, String> officerNotes = new LinkedHashMap<>();
     private Set<String> ignoreLower = Collections.emptySet();
     private scala.collection.mutable.Map<Object, GuildMember> rawRoster = null;
     
@@ -49,32 +48,18 @@ public final class GuildDataCache {
             rawRoster = fetchRawRoster();
             if (rawRoster == null) {
                 memberByName.clear();
-                officerNotes.clear();
                 return;
             }
             
             // Build processed maps
             Map<String, GuildMember> newMembers = new LinkedHashMap<>();
-            Map<String, String> newNotes = new LinkedHashMap<>();
-            
-            String noteLocation = ConfigHelper.getDiscordLinkingNoteLocation();
             scala.collection.Iterator<GuildMember> it = rawRoster.valuesIterator();
             while (it.hasNext()) {
                 GuildMember m = it.next();
-                String name = m.name();
-                newMembers.put(name, m);
-
-                String note;
-                if ("public".equals(noteLocation)) {
-                    note = m.publicNote() != null ? m.publicNote().trim() : "";
-                } else {
-                    note = m.officerNote() != null ? m.officerNote().trim() : "";
-                }
-                newNotes.put(name, note);
+                newMembers.put(m.name(), m);
             }
             
             memberByName = newMembers;
-            officerNotes = newNotes;
             
         } catch (Throwable t) {
             System.err.println("[GuildDataCache] Refresh error: " + t.getMessage());
@@ -144,27 +129,21 @@ public final class GuildDataCache {
     }
     
     /**
-     * Get officer notes filtered by ignore list
+     * A guild member by name, any capitalization, from the live roster (not the per-tick
+     * cache), or null if they aren't in the guild.
      */
-    public Map<String, String> getOfficerNotes(boolean applyIgnoreFilter) {
-        lock.readLock().lock();
-        try {
-            if (!applyIgnoreFilter || ignoreLower.isEmpty()) {
-                return new LinkedHashMap<>(officerNotes);
-            }
-            
-            Map<String, String> filtered = new LinkedHashMap<>();
-            for (Map.Entry<String, String> entry : officerNotes.entrySet()) {
-                if (!ignoreLower.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
-                    filtered.put(entry.getKey(), entry.getValue());
-                }
-            }
-            return filtered;
-        } finally {
-            lock.readLock().unlock();
+    public static GuildMember findMember(String name) {
+        if (name == null) return null;
+        scala.collection.mutable.Map<Object, GuildMember> roster = fetchRawRoster();
+        if (roster == null) return null;
+        scala.collection.Iterator<GuildMember> it = roster.valuesIterator();
+        while (it.hasNext()) {
+            GuildMember m = it.next();
+            if (m.name().equalsIgnoreCase(name)) return m;
         }
+        return null;
     }
-    
+
     
     // -------------------------------------------------------------------------
     // Private helpers

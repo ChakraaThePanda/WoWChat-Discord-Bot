@@ -1,15 +1,11 @@
 package wowchat.discord;
 
-import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Role;
+import wowchat.game.GuildMember;
 
-import java.io.File;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Manages Discord role assignment for inactive guild members.
@@ -65,7 +61,7 @@ public class GuildInactivityManager {
         Map<String, List<Object>> userCharacters = new HashMap<>();
         for (Object member : guildMembers.values()) {
             try {
-                String discordId = DiscordIdExtractor.extractDiscordId(member);
+                String discordId = member instanceof GuildMember ? CharacterStore.discordIdOf((GuildMember) member) : null;
                 if (discordId != null && !discordId.isEmpty()) {
                     userCharacters.computeIfAbsent(discordId, k -> new ArrayList<>()).add(member);
                 }
@@ -203,9 +199,6 @@ public class GuildInactivityManager {
         return inactiveCount;
     }
 
-    /**
-     * Extract Discord ID from officer note (18-19 digit snowflake)
-     */
     private static boolean isInactivityEnabled() {
         return ConfigHelper.isInactivityEnabled();
     }

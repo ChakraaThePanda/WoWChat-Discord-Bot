@@ -1,15 +1,12 @@
 package wowchat.discord;
 
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
-import com.typesafe.config.ConfigResolveOptions;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.Role;
-import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import scala.Option;
 import wowchat.common.Global$;
@@ -18,7 +15,6 @@ import wowchat.game.GamePacketHandler;
 import wowchat.game.GuildMember;
 
 import java.awt.Color;
-import java.io.File;
 import java.util.*;
 
 /**
@@ -98,7 +94,7 @@ public final class GuildDiscordAuditPublisher {
         // Build set of all linked Discord IDs
         Set<String> linkedDiscordIds = new HashSet<>();
         for (GuildMember member : members) {
-            String id = DiscordIdExtractor.extractDiscordId(member);
+            String id = CharacterStore.discordIdOf(member);
             if (id != null) linkedDiscordIds.add(id);
         }
 
@@ -250,7 +246,7 @@ public final class GuildDiscordAuditPublisher {
             List<CharWithOwner> flaggedChars = new ArrayList<>();
             
             for (GuildMember member : members) {
-                String discordId = DiscordIdExtractor.extractDiscordId(member);
+                String discordId = CharacterStore.discordIdOf(member);
                 
                 if (discordId == null) continue; // No Discord ID
                 
@@ -294,7 +290,7 @@ public final class GuildDiscordAuditPublisher {
             Map<String, List<CharRankInfo>> charsByDiscordId = new LinkedHashMap<>();
             
             for (GuildMember member : members) {
-                String discordId = DiscordIdExtractor.extractDiscordId(member);
+                String discordId = CharacterStore.discordIdOf(member);
                 
                 if (discordId == null) continue;
                 
@@ -438,7 +434,7 @@ public final class GuildDiscordAuditPublisher {
 
                 for (GuildMember member : members) {
                     if (member.rankIndex() != targetRankIndex) continue;
-                    long hours = GuildRankTracker.getHoursSinceRankAssigned(member.name(), targetRankIndex);
+                    long hours = CharacterStore.hoursAtRank(member.guid(), targetRankIndex);
                     if (hours < totalHoursRequired) continue;
 
                     String key = member.name().toLowerCase() + "_" + targetRankIndex;
@@ -480,10 +476,10 @@ public final class GuildDiscordAuditPublisher {
                 List<String> flagged = new ArrayList<>();
                 for (GuildMember member : members) {
                     if (member.rankIndex() != targetRankIndex) continue;
-                    long hours = GuildRankTracker.getHoursSinceRankAssigned(member.name(), targetRankIndex);
+                    long hours = CharacterStore.hoursAtRank(member.guid(), targetRankIndex);
                     if (hours >= totalHoursRequired) {
                         String entry = member.name() + " (" + formatHours(hours) + ")";
-                        String discordId = DiscordIdExtractor.extractDiscordId(member);
+                        String discordId = CharacterStore.discordIdOf(member);
                         if (discordId != null) entry += " (<@" + discordId + ">)";
                         flagged.add(entry);
                     }
@@ -519,7 +515,7 @@ public final class GuildDiscordAuditPublisher {
             List<String> lines = new ArrayList<>();
             for (GuildMember member : members) {
                 if (member.rankIndex() != targetRankIndex) continue;
-                String discordId = DiscordIdExtractor.extractDiscordId(member);
+                String discordId = CharacterStore.discordIdOf(member);
                 String line = "- " + member.name();
                 if (discordId != null) line += " (<@" + discordId + ">)";
                 lines.add(line);
