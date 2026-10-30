@@ -1,7 +1,7 @@
 # WoWChat-Discord-Bot
 A Discord bot that connects your World of Warcraft guild to your Discord server: guild chat goes both ways, and guild lists in Discord keep themselves up to date. Made mainly for 3.3.5 (Wrath of the Lich King) private servers.
 
-If you have any questions, add me on Discord: **Chakraa**
+If you have any questions, join my Discord server: [Chakraa's Projects](https://discord.gg/bkk4nVXcjm)
 
 ---
 
@@ -57,3 +57,8 @@ Linking your characters to your Discord account shows your Discord name next to 
 
 You can unlink a character the same way, with **Unclaim**. Admins can also give a character to a member, or remove a link. Links only count in your Discord server.
 
+---
+
+### Questions or feedback?
+
+Need help, found a bug, or have an idea? Join my Discord server, [Chakraa's Projects](https://discord.gg/bkk4nVXcjm), and post in this project's channel.
