@@ -1,7 +1,5 @@
 # WoWChat-Discord-Bot
-A Discord bot that connects your World of Warcraft guild to your Discord server: guild chat goes both ways, and guild lists in Discord keep themselves up to date. Made mainly for 3.3.5 (Wrath of the Lich King) private servers.
-
-If you have any questions, join my Discord server: [Chakraa's Projects](https://discord.gg/bkk4nVXcjm)
+A Discord bot that connects your World of Warcraft guild to your Discord server: guild chat goes both ways, and guild lists in Discord keep themselves up to date. Made for Vanilla, The Burning Crusade, Wrath of the Lich King, Cataclysm and Mists of Pandaria servers.
 
 ---
 
